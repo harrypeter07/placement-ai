@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: placemint-web
+    runtime: node
+    buildCommand: cd web && npm install && npm run build
+    startCommand: cd web && npm start
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: MONGODB_URI
+        sync: false
+      - key: NEXTAUTH_SECRET
+        sync: false
+      - key: NEXTAUTH_URL
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+
+  - type: worker
+    name: placemint-telegram-worker
+    runtime: python
+    buildCommand: pip install -r telegram-worker/requirements.txt
+    startCommand: cd telegram-worker && python listener.py
+    envVars:
+      - key: TELEGRAM_API_ID
+        sync: false
+      - key: TELEGRAM_API_HASH
+        sync: false
+      - key: TELEGRAM_PHONE
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: WEB_APP_URL
+        sync: false
+      - key: TELEGRAM_WORKER_SECRET
+        sync: false
