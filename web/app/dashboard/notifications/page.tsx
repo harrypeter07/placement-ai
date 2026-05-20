@@ -9,6 +9,7 @@ import {
   Sparkles,
   Users,
   RefreshCw,
+  Search,
 } from "lucide-react";
 import { DashboardHeader } from "@/components/dashboard/sidebar";
 import { LoadingButton } from "@/components/ui/loading-button";
@@ -19,6 +20,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { formatDate } from "@/lib/utils";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -29,6 +31,8 @@ interface TelegramGroup {
   _id: string;
   groupId: string;
   title: string;
+  username?: string;
+  kind?: string;
   lastMessageAt?: string;
   lastMessagePreview?: string;
   messageCount: number;
@@ -75,6 +79,7 @@ export default function NotificationsPage() {
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [tab, setTab] = useState<"chats" | "insights" | "alerts">("chats");
   const [togglingGroupId, setTogglingGroupId] = useState<string | null>(null);
+  const [groupSearch, setGroupSearch] = useState("");
   const [runningInsights, setRunningInsights] = useState(false);
   const insightsRan = useRef(false);
 
@@ -221,6 +226,16 @@ export default function NotificationsPage() {
   const selectedGroup = (groups || []).find((g) => g.groupId === selectedGroupId);
   const showChatPanel = selectedGroupId !== null;
   const groupList = groups || [];
+  const q = groupSearch.trim().toLowerCase();
+  const filteredGroups = q
+    ? groupList.filter(
+        (g) =>
+          g.title.toLowerCase().includes(q) ||
+          g.groupId.includes(q) ||
+          (g as { username?: string }).username?.toLowerCase().includes(q)
+      )
+    : groupList;
+  const monitoredCount = groupList.filter((g) => g.monitoringEnabled).length;
 
   function selectGroup(groupId: string) {
     setSelectedGroupId(groupId);
@@ -350,14 +365,29 @@ export default function NotificationsPage() {
         ) : (
           <div className="grid lg:grid-cols-[340px_1fr] gap-4 h-[calc(100vh-12rem)] min-h-[480px]">
             <Card className={cn("glass flex flex-col overflow-hidden", showChatPanel && "hidden lg:flex")}>
-              <div className="p-4 border-b border-white/5">
-                <h2 className="text-sm font-semibold flex items-center gap-2">
-                  <Users className="h-4 w-4 text-primary" />
-                  Groups — toggle monitoring
-                </h2>
-                <p className="text-xs text-muted-foreground mt-1">
-                  ON = Gemini reads last N messages and auto-creates placements
-                </p>
+              <div className="p-4 border-b border-white/5 space-y-3">
+                <div>
+                  <h2 className="text-sm font-semibold flex items-center gap-2">
+                    <Users className="h-4 w-4 text-primary" />
+                    Your Telegram groups
+                  </h2>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Groups sync automatically from the worker — no env editing. Turn{" "}
+                    <strong>Monitor</strong> ON for groups you want AI to watch.
+                    {monitoredCount > 0 && (
+                      <span className="text-primary"> · {monitoredCount} monitored</span>
+                    )}
+                  </p>
+                </div>
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input
+                    placeholder="Search groups..."
+                    value={groupSearch}
+                    onChange={(e) => setGroupSearch(e.target.value)}
+                    className="pl-8 h-8 text-sm"
+                  />
+                </div>
               </div>
               <ScrollArea className="flex-1">
                 {loadingGroups && !groupList.length ? (
@@ -369,11 +399,19 @@ export default function NotificationsPage() {
                 ) : groupList.length === 0 ? (
                   <div className="p-6 text-center text-sm text-muted-foreground">
                     <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-40" />
-                    <p>No groups yet. Run the Telegram worker.</p>
+                    <p className="font-medium">No groups synced yet</p>
+                    <p className="mt-2 text-xs">
+                      Start the Telegram worker on Render. It discovers all groups/channels on your
+                      account and syncs them here within a few minutes.
+                    </p>
+                  </div>
+                ) : filteredGroups.length === 0 ? (
+                  <div className="p-6 text-center text-sm text-muted-foreground">
+                    No groups match &quot;{groupSearch}&quot;
                   </div>
                 ) : (
                   <div className="p-2 space-y-1">
-                    {groupList.map((g) => (
+                    {filteredGroups.map((g) => (
                       <div
                         key={g.groupId}
                         className={cn(

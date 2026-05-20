@@ -89,8 +89,8 @@ export async function GET() {
       setup: {
         step1: "Run web app: npm run dev (from repo root)",
         step2: "Run worker: cd telegram-worker && python listener.py",
-        step3: "Set TELEGRAM_GROUP_IDS in telegram-worker/.env to your placement group chat IDs",
-        step4: "Post a placement message in the group or use Test Parser in Settings",
+        step3: "Open Notifications and enable Monitor on your placement groups",
+        step4: "Post a placement message in a monitored group or use Test Parser in Settings",
       },
     });
   } catch (e) {

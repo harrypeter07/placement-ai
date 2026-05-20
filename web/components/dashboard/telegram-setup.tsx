@@ -92,10 +92,9 @@ export function TelegramSetupCard() {
         <ol className="list-decimal list-inside space-y-2 text-sm text-muted-foreground">
           <li>Copy <code className="bg-muted px-1 rounded">telegram-worker/.env.example</code> → <code className="bg-muted px-1 rounded">.env</code></li>
           <li>Get API ID/Hash from <a href="https://my.telegram.org" className="text-primary underline" target="_blank" rel="noreferrer">my.telegram.org</a></li>
-          <li>Run <code className="bg-muted px-1 rounded">python list_groups.py</code> to find group chat IDs</li>
-          <li>Set <code className="bg-muted px-1 rounded">TELEGRAM_GROUP_IDS</code> in worker <code className="bg-muted px-1 rounded">.env</code></li>
           <li>Match <code className="bg-muted px-1 rounded">TELEGRAM_WORKER_SECRET</code> in both <code className="bg-muted px-1 rounded">web/.env.local</code> and worker <code className="bg-muted px-1 rounded">.env</code></li>
-          <li>Start worker: <code className="bg-muted px-1 rounded">cd telegram-worker && python listener.py</code></li>
+          <li>Start worker: <code className="bg-muted px-1 rounded">cd telegram-worker && python listener.py</code> — it syncs all your groups automatically</li>
+          <li>In <strong>Notifications</strong>, turn <strong>Monitor</strong> ON for each placement group you want</li>
         </ol>
 
         <div className="border-t border-white/10 pt-4 space-y-2">

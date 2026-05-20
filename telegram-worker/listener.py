@@ -15,17 +15,22 @@ load_dotenv()
 API_ID = int(os.getenv("TELEGRAM_API_ID", "0"))
 API_HASH = os.getenv("TELEGRAM_API_HASH", "")
 PHONE = os.getenv("TELEGRAM_PHONE", "")
-GROUP_IDS = [int(g.strip()) for g in os.getenv("TELEGRAM_GROUP_IDS", "").split(",") if g.strip()]
+# Optional legacy fallback — dashboard monitoring prefs are preferred
+LEGACY_GROUP_IDS = [
+    int(g.strip())
+    for g in os.getenv("TELEGRAM_GROUP_IDS", "").split(",")
+    if g.strip()
+]
 WEB_APP_URL = os.getenv("WEB_APP_URL", "http://localhost:3000").rstrip("/")
 WORKER_SECRET = os.getenv("TELEGRAM_WORKER_SECRET", "")
 READ_ONLY = os.getenv("TELEGRAM_READ_ONLY", "true").lower() in ("1", "true", "yes")
 HISTORY_LIMIT = int(os.getenv("TELEGRAM_HISTORY_LIMIT", "40"))
+DISCOVER_INTERVAL_SEC = int(os.getenv("TELEGRAM_DISCOVER_INTERVAL_SEC", "900"))
 
 seen_hashes: set[str] = set()
 group_titles: dict[int, str] = {}
+monitored_ids: set[int] = set()
 
-# Python 3.14+ can start without a default loop in main thread.
-# Telethon client initialization expects one to exist.
 try:
     asyncio.get_running_loop()
 except RuntimeError:
@@ -60,38 +65,81 @@ async def send_heartbeat(groups: int = 0, last_message_at: str | None = None, er
                 else:
                     text = await resp.text()
                     print(f"Heartbeat failed {resp.status}: {text[:200]}")
-                    print(f"  → Is npm run dev running? WEB_APP_URL must match (e.g. http://localhost:3001)")
     except Exception as e:
         print(f"Heartbeat failed (check WEB_APP_URL={WEB_APP_URL}): {e}")
 
 
-async def sync_groups_to_api():
-    if not WORKER_SECRET or not GROUP_IDS:
-        return
+async def discover_and_sync_all_groups():
+    """Fetch every group/channel from Telegram and sync to the web app catalog."""
+    if not WORKER_SECRET:
+        return 0
     groups = []
-    for gid in GROUP_IDS:
-        try:
-            entity = await client.get_entity(gid)
-            title = getattr(entity, "title", None) or getattr(entity, "name", None) or str(gid)
-            group_titles[gid] = title
-            groups.append({"groupId": str(gid), "title": title})
-        except Exception as e:
-            print(f"  Could not resolve group {gid}: {e}")
+    async for dialog in client.iter_dialogs():
+        if not (dialog.is_group or dialog.is_channel):
+            continue
+        gid = dialog.id
+        title = dialog.name or str(gid)
+        group_titles[gid] = title
+        kind = "channel" if dialog.is_channel else "group"
+        username = getattr(dialog.entity, "username", None) if dialog.entity else None
+        groups.append(
+            {
+                "groupId": str(gid),
+                "title": title,
+                "kind": kind,
+                "username": username or "",
+            }
+        )
     if not groups:
-        return
+        print("No groups/channels found on this Telegram account")
+        return 0
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{WEB_APP_URL}/api/telegram/groups",
                 json={"apiKey": WORKER_SECRET, "groups": groups},
-                timeout=aiohttp.ClientTimeout(total=15),
+                timeout=aiohttp.ClientTimeout(total=60),
             ) as resp:
                 if resp.status == 200:
-                    print(f"Synced {len(groups)} group(s) to dashboard")
+                    print(f"Discovered & synced {len(groups)} group(s)/channel(s) to dashboard")
                 else:
-                    print(f"Group sync failed {resp.status}: {(await resp.text())[:120]}")
+                    print(f"Group catalog sync failed {resp.status}: {(await resp.text())[:120]}")
     except Exception as e:
-        print(f"Group sync failed: {e}")
+        print(f"Group catalog sync failed: {e}")
+    return len(groups)
+
+
+async def refresh_monitored_ids() -> set[int]:
+    """Load monitored group IDs from all users' dashboard preferences."""
+    global monitored_ids
+    ids: set[int] = set(LEGACY_GROUP_IDS)
+
+    if WORKER_SECRET:
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    f"{WEB_APP_URL}/api/telegram/groups/monitored",
+                    params={"apiKey": WORKER_SECRET},
+                    timeout=aiohttp.ClientTimeout(total=15),
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        for raw in data.get("groupIds", []):
+                            try:
+                                ids.add(int(raw))
+                            except (TypeError, ValueError):
+                                pass
+                    else:
+                        print(f"Monitored list fetch failed {resp.status}")
+        except Exception as e:
+            print(f"Monitored list fetch failed: {e}")
+
+    monitored_ids = ids
+    if ids:
+        print(f"Monitoring {len(ids)} group(s) from dashboard: {sorted(ids)}")
+    else:
+        print("No groups enabled for monitoring yet — users can toggle ON in Notifications")
+    return ids
 
 
 async def log_message_via_api(
@@ -167,18 +215,26 @@ async def ingest_via_api(message_text: str, message_id: str, group_id: str):
 
 
 async def heartbeat_loop():
+    tick = 0
     while True:
-        await send_heartbeat(groups=len(GROUP_IDS))
+        await refresh_monitored_ids()
+        await send_heartbeat(groups=len(monitored_ids))
+        tick += 1
+        if tick % max(1, DISCOVER_INTERVAL_SEC // 45) == 0:
+            await discover_and_sync_all_groups()
         await asyncio.sleep(45)
 
 
-@client.on(events.NewMessage(chats=GROUP_IDS if GROUP_IDS else None))
+@client.on(events.NewMessage())
 async def handler(event):
+    chat_id = event.chat_id
+    if not monitored_ids or chat_id not in monitored_ids:
+        return
+
     text = event.message.message or ""
     if not text.strip():
         return
 
-    chat_id = event.chat_id
     title = group_titles.get(chat_id)
     if not title:
         try:
@@ -204,8 +260,8 @@ async def handler(event):
     await log_message_via_api(text, str(event.message.id), str(chat_id), title, sent, sender_name)
 
     if READ_ONLY:
-        print("  [READ-ONLY] Logged to Notifications — placement ingest disabled")
-        await send_heartbeat(groups=len(GROUP_IDS), last_message_at=datetime.now(timezone.utc).isoformat())
+        print("  [READ-ONLY] Logged to Notifications")
+        await send_heartbeat(groups=len(monitored_ids), last_message_at=datetime.now(timezone.utc).isoformat())
         return
 
     if len(text) < 20:
@@ -240,7 +296,7 @@ async def handler(event):
     if doc_id:
         print(f"  Saved: {company} - {role} (confidence: {extracted.get('confidence')})")
         await ingest_via_api(text, str(event.message.id), str(event.chat_id))
-        await send_heartbeat(groups=len(GROUP_IDS), last_message_at=datetime.utcnow().isoformat())
+        await send_heartbeat(groups=len(monitored_ids), last_message_at=datetime.utcnow().isoformat())
     else:
         print(f"  DB duplicate: {company}")
 
@@ -249,28 +305,31 @@ async def main():
     if not API_ID or not API_HASH:
         print("ERROR: Set TELEGRAM_API_ID and TELEGRAM_API_HASH in telegram-worker/.env")
         return
-    if not GROUP_IDS:
-        print("WARNING: TELEGRAM_GROUP_IDS is empty. Run: python list_groups.py")
     print(f"Connecting to Telegram as {PHONE}...")
     await client.start(phone=PHONE)
     me = await client.get_me()
     print(f"Logged in as {me.first_name} (@{me.username})")
-    print(f"Listening to {len(GROUP_IDS)} group(s): {GROUP_IDS}")
     print(f"WEB_APP_URL={WEB_APP_URL}")
-    if READ_ONLY:
-        print("READ-ONLY: messages appear in Notifications; placement ingest is off")
-    else:
-        print(f"Will forward placements to {WEB_APP_URL}/api/telegram/ingest")
+    print("Dynamic groups: catalog synced from Telegram; monitoring from dashboard toggles")
 
-    await sync_groups_to_api()
-    for gid in GROUP_IDS:
-        title = group_titles.get(gid, str(gid))
+    await discover_and_sync_all_groups()
+    await refresh_monitored_ids()
+
+    for gid in monitored_ids:
+        title = group_titles.get(gid)
+        if not title:
+            try:
+                entity = await client.get_entity(gid)
+                title = getattr(entity, "title", None) or getattr(entity, "name", None) or str(gid)
+                group_titles[gid] = title
+            except Exception:
+                title = str(gid)
         await backfill_group_history(gid, title)
 
     print("Waiting for new messages...\n")
 
     asyncio.create_task(heartbeat_loop())
-    await send_heartbeat(groups=len(GROUP_IDS))
+    await send_heartbeat(groups=len(monitored_ids))
     await client.run_until_disconnected()
 
 

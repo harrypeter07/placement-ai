@@ -1,4 +1,4 @@
-"""List Telegram groups/channels your account can access. Use IDs in TELEGRAM_GROUP_IDS."""
+"""List Telegram groups/channels your account can access (debug helper)."""
 import asyncio
 import os
 from telethon import TelegramClient
@@ -15,11 +15,11 @@ PHONE = os.getenv("TELEGRAM_PHONE", "")
 async def main():
     client = TelegramClient(get_session_path(), API_ID, API_HASH)
     await client.start(phone=PHONE)
-    print("\nYour groups & channels (use the ID in TELEGRAM_GROUP_IDS):\n")
+    print("\nYour groups & channels (enable Monitor in dashboard Notifications):\n")
     async for dialog in client.iter_dialogs():
         if dialog.is_group or dialog.is_channel:
             print(f"  {dialog.id}  |  {dialog.name}")
-    print("\nExample .env:\n  TELEGRAM_GROUP_IDS=-1001234567890,-1009876543210\n")
+    print("\nNormally you do not need this script — listener.py syncs all groups to the app.\n")
     await client.disconnect()
 
 

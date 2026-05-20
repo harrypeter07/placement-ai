@@ -75,7 +75,8 @@ Set these in **Render Worker service env**:
 - `MONGODB_URI`
 - `WEB_APP_URL` (your Vercel app URL)
 - `TELEGRAM_WORKER_SECRET` (same value as Vercel)
-- `TELEGRAM_GROUP_IDS` (comma-separated group IDs to monitor)
+- `TELEGRAM_DISCOVER_INTERVAL_SEC` (optional, default `900` — re-sync group catalog from Telegram)
+- `TELEGRAM_GROUP_IDS` (optional legacy fallback; users enable groups in **Notifications** instead)
 
 ---
 
@@ -125,6 +126,15 @@ The worker also sets a default asyncio loop at import time in `telegram-worker/l
 5. Deploy
 
 If web is already on Vercel, keep only worker active on Render.
+
+### Dynamic Telegram groups (no manual env IDs)
+
+1. Worker logs into your Telegram account and syncs **all** groups/channels to the app (`POST /api/telegram/groups`).
+2. Users open **Notifications → Chats** and turn **Monitor** ON for placement groups they care about.
+3. Worker polls `GET /api/telegram/groups/monitored` for the union of enabled IDs and only logs/backfills those chats.
+4. Re-discovery runs every ~15 minutes (`TELEGRAM_DISCOVER_INTERVAL_SEC`); use **Refresh** in the UI to reload the catalog after sync.
+
+You no longer need `TELEGRAM_GROUP_IDS` unless you want a legacy fallback before any user toggles monitoring.
 
 ---
 

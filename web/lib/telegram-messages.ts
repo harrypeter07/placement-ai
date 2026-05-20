@@ -1,10 +1,23 @@
 import { TelegramGroup } from "@/models/TelegramGroup";
 import { TelegramMessage } from "@/models/TelegramMessage";
 
-export async function upsertTelegramGroup(groupId: string, title: string) {
+export async function upsertTelegramGroup(
+  groupId: string,
+  title: string,
+  extra?: { kind?: string; username?: string }
+) {
+  const now = new Date();
   return TelegramGroup.findOneAndUpdate(
     { groupId },
-    { $setOnInsert: { groupId }, $set: { title } },
+    {
+      $setOnInsert: { groupId },
+      $set: {
+        title,
+        lastDiscoveredAt: now,
+        ...(extra?.kind ? { kind: extra.kind } : {}),
+        ...(extra?.username ? { username: extra.username } : {}),
+      },
+    },
     { upsert: true, new: true }
   );
 }

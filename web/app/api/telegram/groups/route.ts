@@ -5,6 +5,7 @@ import { TelegramGroup } from "@/models/TelegramGroup";
 import { requireAuth } from "@/lib/api-auth";
 import { StudentPreferences, getDefaultStudentPreferences } from "@/models/StudentPreferences";
 import { upsertTelegramGroup } from "@/lib/telegram-messages";
+import { checkWorkerSecret } from "@/lib/telegram-worker-auth";
 
 export const runtime = "nodejs";
 
@@ -14,15 +15,13 @@ const syncSchema = z.object({
     z.object({
       groupId: z.string(),
       title: z.string(),
+      kind: z.enum(["group", "channel", "supergroup"]).optional(),
+      username: z.string().optional(),
     })
   ),
 });
 
-function checkWorkerSecret(apiKey: string | undefined) {
-  return !process.env.TELEGRAM_WORKER_SECRET || apiKey === process.env.TELEGRAM_WORKER_SECRET;
-}
-
-/** GET — list monitored groups (authenticated) */
+/** GET — all discovered groups + per-user monitoring flag */
 export async function GET() {
   try {
     const user = await requireAuth();
@@ -32,7 +31,7 @@ export async function GET() {
       prefs = await StudentPreferences.create({ userId: user.id, ...getDefaultStudentPreferences() });
     }
     const monitored = new Set(prefs.telegram?.monitoredGroupIds || []);
-    const groups = await TelegramGroup.find().sort({ lastMessageAt: -1, title: 1 }).lean();
+    const groups = await TelegramGroup.find().sort({ title: 1 }).lean();
     return NextResponse.json(
       groups.map((g) => ({
         ...g,
@@ -45,7 +44,7 @@ export async function GET() {
   }
 }
 
-/** POST — worker syncs group names on startup */
+/** POST — worker syncs all dialogs from Telegram account */
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -59,7 +58,10 @@ export async function POST(req: Request) {
 
     await connectDB();
     for (const g of parsed.data.groups) {
-      await upsertTelegramGroup(g.groupId, g.title);
+      await upsertTelegramGroup(g.groupId, g.title, {
+        kind: g.kind,
+        username: g.username,
+      });
     }
 
     return NextResponse.json({ ok: true, synced: parsed.data.groups.length });
