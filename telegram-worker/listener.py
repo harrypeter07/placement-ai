@@ -23,6 +23,15 @@ HISTORY_LIMIT = int(os.getenv("TELEGRAM_HISTORY_LIMIT", "40"))
 
 seen_hashes: set[str] = set()
 group_titles: dict[int, str] = {}
+
+# Python 3.14+ can start without a default loop in main thread.
+# Telethon client initialization expects one to exist.
+try:
+    asyncio.get_running_loop()
+except RuntimeError:
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
 client = TelegramClient(get_session_path(), API_ID, API_HASH)
 
 

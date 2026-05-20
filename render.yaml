@@ -22,6 +22,8 @@ services:
     buildCommand: pip install -r telegram-worker/requirements.txt
     startCommand: cd telegram-worker && python listener.py
     envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
       - key: TELEGRAM_API_ID
         sync: false
       - key: TELEGRAM_API_HASH
