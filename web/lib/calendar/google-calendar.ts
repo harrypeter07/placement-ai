@@ -331,12 +331,12 @@ export async function updatePrimaryCalendarEvent(
       end: { date: endDate },
     };
   } else {
-    let startIso =
+    const startIso =
       input.start ||
       existing.data.start?.dateTime ||
       (existing.data.start?.date ? `${existing.data.start.date}T12:00:00.000Z` : undefined) ||
       new Date().toISOString();
-    let endIso =
+    const endIso =
       input.end ||
       existing.data.end?.dateTime ||
       (existing.data.end?.date ? `${existing.data.end.date}T12:00:00.000Z` : undefined) ||
