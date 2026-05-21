@@ -58,6 +58,7 @@ Set these in **Vercel -> Project -> Settings -> Environment Variables**:
 - `GOOGLE_CLIENT_SECRET`
 - `GEMINI_API_KEY`
 - `TELEGRAM_WORKER_SECRET` (shared secret, must match worker)
+- `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` (from my.telegram.org — required for **Connect Telegram** in Settings)
 - `NODE_ENV=production`
 
 Optional:
@@ -70,7 +71,7 @@ Set these in **Render Worker service env**:
 
 - `TELEGRAM_API_ID`
 - `TELEGRAM_API_HASH`
-- `TELEGRAM_PHONE`
+- `TELEGRAM_PHONE` (optional — login is done in dashboard, not on Render)
 - `GEMINI_API_KEY`
 - `MONGODB_URI`
 - `WEB_APP_URL` (your Vercel app URL)
@@ -127,6 +128,15 @@ The worker also sets a default asyncio loop at import time in `telegram-worker/l
 
 If web is already on Vercel, keep only worker active on Render.
 
+### Connect Telegram (no terminal OTP on Render)
+
+Render cannot run interactive `input()` for login codes. Use the dashboard instead:
+
+1. Add `TELEGRAM_API_ID` + `TELEGRAM_API_HASH` to **Vercel** and **Render** worker env.
+2. Deploy web app, sign in, open **Settings**.
+3. Use **Connect Telegram** → enter phone → OTP (and 2FA password if enabled).
+4. Redeploy / restart the Render worker — it loads the session from `GET /api/telegram/session`.
+
 ### Dynamic Telegram groups (no manual env IDs)
 
 1. Worker logs into your Telegram account and syncs **all** groups/channels to the app (`POST /api/telegram/groups`).
@@ -143,10 +153,9 @@ You no longer need `TELEGRAM_GROUP_IDS` unless you want a legacy fallback before
 1. Visit `<vercel-url>/api/health` and confirm web app responds.
 2. Login with Google once.
 3. Open calendar page and confirm connected status and event loading.
-4. Start worker and verify:
-   - `/api/telegram/status` shows healthy
-   - groups/messages appear in Notifications
-5. Toggle monitoring ON for groups and run AI insights.
+4. **Settings → Connect Telegram** (phone + OTP).
+5. Restart Render worker; verify `/api/telegram/status` shows worker online.
+6. Groups appear in Notifications — toggle monitoring ON and run AI insights.
 6. Confirm deadlines/reminders auto-created and visible in Placements.
 
 ---

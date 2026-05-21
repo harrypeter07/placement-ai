@@ -4,6 +4,7 @@ import { Deadline } from "@/models/Deadline";
 import { WorkerHeartbeat } from "@/models/WorkerHeartbeat";
 import { requireAuth } from "@/lib/api-auth";
 import { getMemoryHeartbeat } from "@/lib/worker-heartbeat-store";
+import { TelegramWorkerSession } from "@/models/TelegramWorkerSession";
 
 export const runtime = "nodejs";
 
@@ -76,8 +77,17 @@ export async function GET() {
 
     const workerConfigured = !!process.env.TELEGRAM_WORKER_SECRET;
 
+    let telegramAccountConnected = false;
+    if (dbOnline) {
+      const sessionDoc = await TelegramWorkerSession.findOne({ key: "default" })
+        .select("+sessionString")
+        .lean();
+      telegramAccountConnected = !!sessionDoc?.sessionString;
+    }
+
     return NextResponse.json({
       connected: workerOnline,
+      telegramAccountConnected,
       workerConfigured,
       workerStatus: workerOnline ? "online" : heartbeat ? "stale" : "offline",
       groupsMonitored: heartbeat?.groupsMonitored ?? 0,
@@ -87,10 +97,10 @@ export async function GET() {
       lastCompany: lastTelegramDeadline?.company ?? null,
       databaseOnline: dbOnline,
       setup: {
-        step1: "Run web app: npm run dev (from repo root)",
-        step2: "Run worker: cd telegram-worker && python listener.py",
-        step3: "Open Notifications and enable Monitor on your placement groups",
-        step4: "Post a placement message in a monitored group or use Test Parser in Settings",
+        step1: "Settings → Connect Telegram (phone + OTP)",
+        step2: "Redeploy Render worker after connecting",
+        step3: "Notifications → enable Monitor on placement groups",
+        step4: "Post in a monitored group or use Test Parser below",
       },
     });
   } catch (e) {

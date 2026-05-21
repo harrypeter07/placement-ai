@@ -30,6 +30,7 @@ services:
         sync: false
       - key: TELEGRAM_PHONE
         sync: false
+        optional: true
       - key: GEMINI_API_KEY
         sync: false
       - key: MONGODB_URI

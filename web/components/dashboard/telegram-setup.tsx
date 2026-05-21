@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Bot, MessageSquare, Send } from "lucide-react";
+import { MessageSquare, Send } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import { formatDate } from "@/lib/utils";
+import { TelegramConnectCard } from "@/components/dashboard/telegram-connect";
 
 const SAMPLE_MESSAGE = `Google is hiring Software Engineer interns.
 Eligibility: CSE/IT, Min CGPA 8.0, 2025 batch, no backlogs.
@@ -16,6 +17,7 @@ Package: 45 LPA`;
 
 interface TelegramStatus {
   connected: boolean;
+  telegramAccountConnected?: boolean;
   workerStatus: string;
   groupsMonitored: number;
   telegramDeadlines: number;
@@ -59,55 +61,59 @@ export function TelegramSetupCard() {
   }
 
   return (
-    <Card className="glass glow-border">
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Bot className="h-5 w-5 text-primary" />
-          Telegram Integration
-        </CardTitle>
-        <CardDescription>
-          <code className="text-xs">npm run dev</code> runs the web app and API only. The Telegram worker is a separate process.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm text-muted-foreground">Worker status:</span>
-          <Badge variant={status?.connected ? "success" : "warning"}>
-            {status?.workerStatus ?? "checking…"}
-          </Badge>
-          {status && (
-            <span className="text-xs text-muted-foreground">
-              {status.groupsMonitored} groups monitored · {status.telegramDeadlines} posts ingested
-            </span>
+    <div className="space-y-4">
+      <TelegramConnectCard />
+
+      <Card className="glass">
+        <CardHeader>
+          <CardTitle className="text-base">Worker & monitoring</CardTitle>
+          <CardDescription>
+            After connecting above, deploy the Render worker. It loads your session from the database automatically.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm text-muted-foreground">Worker heartbeat:</span>
+            <Badge variant={status?.connected ? "success" : "warning"}>
+              {status?.workerStatus ?? "checking…"}
+            </Badge>
+            {status && (
+              <span className="text-xs text-muted-foreground">
+                {status.groupsMonitored} groups monitored · {status.telegramDeadlines} posts ingested
+              </span>
+            )}
+          </div>
+
+          {status?.telegramAccountConnected === false && (
+            <p className="text-sm text-amber-200/90">Connect Telegram above before starting the worker.</p>
           )}
-        </div>
 
-        {status?.lastIngestedAt && (
-          <p className="text-sm text-muted-foreground">
-            Last ingest: {formatDate(status.lastIngestedAt)}
-            {status.lastCompany ? ` — ${status.lastCompany}` : ""}
-          </p>
-        )}
+          {status?.lastIngestedAt && (
+            <p className="text-sm text-muted-foreground">
+              Last ingest: {formatDate(status.lastIngestedAt)}
+              {status.lastCompany ? ` — ${status.lastCompany}` : ""}
+            </p>
+          )}
 
-        <ol className="list-decimal list-inside space-y-2 text-sm text-muted-foreground">
-          <li>Copy <code className="bg-muted px-1 rounded">telegram-worker/.env.example</code> → <code className="bg-muted px-1 rounded">.env</code></li>
-          <li>Get API ID/Hash from <a href="https://my.telegram.org" className="text-primary underline" target="_blank" rel="noreferrer">my.telegram.org</a></li>
-          <li>Match <code className="bg-muted px-1 rounded">TELEGRAM_WORKER_SECRET</code> in both <code className="bg-muted px-1 rounded">web/.env.local</code> and worker <code className="bg-muted px-1 rounded">.env</code></li>
-          <li>Start worker: <code className="bg-muted px-1 rounded">cd telegram-worker && python listener.py</code> — it syncs all your groups automatically</li>
-          <li>In <strong>Notifications</strong>, turn <strong>Monitor</strong> ON for each placement group you want</li>
-        </ol>
+          <ol className="list-decimal list-inside space-y-2 text-sm text-muted-foreground">
+            <li>Connect Telegram in the card above (phone + OTP)</li>
+            <li>Match <code className="bg-muted px-1 rounded">TELEGRAM_WORKER_SECRET</code> on Vercel and Render</li>
+            <li>Redeploy the Render worker — set <code className="bg-muted px-1 rounded">PYTHON_VERSION=3.11.9</code></li>
+            <li>In <strong>Notifications</strong>, turn <strong>Monitor</strong> ON for placement groups</li>
+          </ol>
 
-        <div className="border-t border-white/10 pt-4 space-y-2">
-          <p className="text-sm font-medium flex items-center gap-2">
-            <MessageSquare className="h-4 w-4" /> Test without Telegram
-          </p>
-          <Textarea value={testMsg} onChange={(e) => setTestMsg(e.target.value)} rows={5} className="text-xs" />
-          <Button variant="glow" onClick={runTest} disabled={testing}>
-            <Send className="h-4 w-4 mr-2" />
-            {testing ? "Parsing…" : "Test AI Parser"}
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+          <div className="border-t border-white/10 pt-4 space-y-2">
+            <p className="text-sm font-medium flex items-center gap-2">
+              <MessageSquare className="h-4 w-4" /> Test without Telegram
+            </p>
+            <Textarea value={testMsg} onChange={(e) => setTestMsg(e.target.value)} rows={5} className="text-xs" />
+            <Button variant="glow" onClick={runTest} disabled={testing}>
+              <Send className="h-4 w-4 mr-2" />
+              {testing ? "Parsing…" : "Test AI Parser"}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 }

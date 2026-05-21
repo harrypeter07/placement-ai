@@ -1,9 +1,11 @@
 import asyncio
 import os
+import sys
 from datetime import datetime, timezone
 
 import aiohttp
 from telethon import TelegramClient, events
+from telethon.sessions import StringSession
 from dotenv import load_dotenv
 
 from ai_parser import parse_placement_message, is_duplicate
@@ -14,7 +16,6 @@ load_dotenv()
 
 API_ID = int(os.getenv("TELEGRAM_API_ID", "0"))
 API_HASH = os.getenv("TELEGRAM_API_HASH", "")
-PHONE = os.getenv("TELEGRAM_PHONE", "")
 # Optional legacy fallback — dashboard monitoring prefs are preferred
 LEGACY_GROUP_IDS = [
     int(g.strip())
@@ -37,7 +38,65 @@ except RuntimeError:
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
 
-client = TelegramClient(get_session_path(), API_ID, API_HASH)
+client: TelegramClient | None = None
+
+
+async def fetch_session_string() -> str:
+    """Load Telethon StringSession from env or dashboard (saved via Settings OTP flow)."""
+    env = os.getenv("TELEGRAM_SESSION_STRING", "").strip()
+    if env:
+        return env
+    if not WORKER_SECRET:
+        return ""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(
+                f"{WEB_APP_URL}/api/telegram/session",
+                params={"apiKey": WORKER_SECRET},
+                timeout=aiohttp.ClientTimeout(total=20),
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    s = (data.get("sessionString") or "").strip()
+                    if s:
+                        print("Loaded Telegram session from dashboard")
+                        return s
+                if resp.status == 404:
+                    print("No Telegram session in dashboard — connect in Settings first")
+                else:
+                    print(f"Session fetch failed {resp.status}: {(await resp.text())[:120]}")
+    except Exception as e:
+        print(f"Session fetch failed: {e}")
+    return ""
+
+
+async def connect_telegram() -> TelegramClient:
+    global client
+    session_str = await fetch_session_string()
+    if session_str:
+        c = TelegramClient(StringSession(session_str), API_ID, API_HASH)
+        await c.connect()
+        if await c.is_user_authorized():
+            client = c
+            return c
+        print("WARNING: Dashboard session invalid — reconnect in Settings")
+
+    session_path = get_session_path()
+    if os.path.exists(f"{session_path}.session"):
+        c = TelegramClient(session_path, API_ID, API_HASH)
+        await c.connect()
+        if await c.is_user_authorized():
+            print("Using legacy file session from telegram-worker/sessions/")
+            client = c
+            return c
+
+    print(
+        "ERROR: No Telegram login.\n"
+        "  1. Open your app → Settings → Connect Telegram (phone + OTP)\n"
+        "  2. Redeploy this worker\n"
+        "  Or set TELEGRAM_SESSION_STRING / run listener locally once to create a file session."
+    )
+    sys.exit(1)
 
 
 async def send_heartbeat(groups: int = 0, last_message_at: str | None = None, error: str | None = None):
@@ -225,8 +284,7 @@ async def heartbeat_loop():
         await asyncio.sleep(45)
 
 
-@client.on(events.NewMessage())
-async def handler(event):
+async def on_new_message(event):
     chat_id = event.chat_id
     if not monitored_ids or chat_id not in monitored_ids:
         return
@@ -305,8 +363,10 @@ async def main():
     if not API_ID or not API_HASH:
         print("ERROR: Set TELEGRAM_API_ID and TELEGRAM_API_HASH in telegram-worker/.env")
         return
-    print(f"Connecting to Telegram as {PHONE}...")
-    await client.start(phone=PHONE)
+    print("Connecting to Telegram using dashboard session...")
+    await connect_telegram()
+    assert client is not None
+    client.add_event_handler(on_new_message, events.NewMessage())
     me = await client.get_me()
     print(f"Logged in as {me.first_name} (@{me.username})")
     print(f"WEB_APP_URL={WEB_APP_URL}")
