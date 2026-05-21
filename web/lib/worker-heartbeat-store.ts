@@ -1,7 +1,7 @@
 /** In-process fallback when MongoDB is temporarily unreachable (dev / flaky Atlas). */
 
 export interface WorkerHeartbeatSnapshot {
-  status: "online" | "offline";
+  status: "online" | "offline" | "waiting";
   groupsMonitored: number;
   lastMessageAt?: Date;
   lastError?: string;
