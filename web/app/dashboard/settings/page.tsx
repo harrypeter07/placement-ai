@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useSession, signIn } from "next-auth/react";
 import { DashboardHeader } from "@/components/dashboard/sidebar";
 import { TelegramSetupCard } from "@/components/dashboard/telegram-setup";
+import { TelegramConnectCard } from "@/components/dashboard/telegram-connect";
 import { SystemStatusBar } from "@/components/dashboard/system-status";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -142,24 +143,29 @@ export default function SettingsPage() {
     setDirty(true);
   }
 
-  if (loading || !prefs) {
-    return (
-      <>
-        <DashboardHeader title="Settings" />
-        <main className="p-4 lg:p-8 flex justify-center">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
-        </main>
-      </>
-    );
-  }
-
   return (
     <>
       <DashboardHeader title="Settings" />
       <main className="p-4 lg:p-8 space-y-6 max-w-4xl pb-24">
         <SystemStatusBar />
-        <TelegramSetupCard />
 
+        {/* Always visible — do not wait for prefs load */}
+        <section id="connect-telegram" className="scroll-mt-24">
+          <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
+            Connect Telegram account
+            <span className="text-xs font-normal text-muted-foreground">(required for worker)</span>
+          </h2>
+          <TelegramConnectCard />
+        </section>
+
+        <TelegramSetupCard hideConnect />
+
+        {loading || !prefs ? (
+          <div className="flex justify-center py-12">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        ) : (
+          <>
         <div className="flex flex-wrap gap-3 items-center justify-between">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             {dirty && <span className="text-amber-400">Unsaved changes</span>}
@@ -175,8 +181,11 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        <Tabs defaultValue="general" className="space-y-6">
+        <Tabs defaultValue="connect" className="space-y-6">
           <TabsList className="flex flex-wrap h-auto gap-1 bg-muted/50 p-1 rounded-xl">
+            <TabsTrigger value="connect" className="data-[state=active]:bg-primary/20">
+              Connect Telegram
+            </TabsTrigger>
             <TabsTrigger value="general">General</TabsTrigger>
             <TabsTrigger value="reminders">Reminders</TabsTrigger>
             <TabsTrigger value="calendar">Calendar</TabsTrigger>
@@ -184,6 +193,14 @@ export default function SettingsPage() {
             <TabsTrigger value="placement">Placement</TabsTrigger>
             <TabsTrigger value="telegram">Telegram AI</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="connect" className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Link the Telegram account that is in your placement groups. Use phone + OTP below, then enable groups in{" "}
+              <strong>Notifications</strong>.
+            </p>
+            <TelegramConnectCard />
+          </TabsContent>
 
           <TabsContent value="general" className="space-y-4">
             <Card className="glass">
@@ -431,6 +448,7 @@ export default function SettingsPage() {
           </TabsContent>
 
           <TabsContent value="telegram" className="space-y-4">
+            <TelegramConnectCard />
             <Card className="glass">
               <CardHeader>
                 <CardTitle>Telegram AI monitoring</CardTitle>
@@ -464,6 +482,8 @@ export default function SettingsPage() {
             </Card>
           </TabsContent>
         </Tabs>
+          </>
+        )}
       </main>
     </>
   );

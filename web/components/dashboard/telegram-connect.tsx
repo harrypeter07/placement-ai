@@ -127,26 +127,7 @@ export function TelegramConnectCard() {
     );
   }
 
-  if (!status?.apiConfigured) {
-    return (
-      <Card className="glass border-amber-500/30">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-amber-200">
-            <Shield className="h-5 w-5" />
-            Telegram API not configured
-          </CardTitle>
-          <CardDescription>
-            Add <code className="text-xs bg-muted px-1 rounded">TELEGRAM_API_ID</code> and{" "}
-            <code className="text-xs bg-muted px-1 rounded">TELEGRAM_API_HASH</code> to Vercel (from{" "}
-            <a href="https://my.telegram.org" className="text-primary underline" target="_blank" rel="noreferrer">
-              my.telegram.org
-            </a>
-            ) — same values as the Render worker.
-          </CardDescription>
-        </CardHeader>
-      </Card>
-    );
-  }
+  const apiReady = status?.apiConfigured !== false;
 
   if (status.connected) {
     return (
@@ -185,10 +166,10 @@ export function TelegramConnectCard() {
   }
 
   return (
-    <Card className="glass glow-border">
+    <Card className="glass glow-border ring-2 ring-primary/30">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Bot className="h-5 w-5 text-primary" />
+        <CardTitle className="flex items-center gap-2 text-xl">
+          <Bot className="h-6 w-6 text-primary" />
           Connect Telegram
         </CardTitle>
         <CardDescription>
@@ -196,6 +177,23 @@ export function TelegramConnectCard() {
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {!apiReady && (
+          <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-100/90 flex gap-2">
+            <Shield className="h-5 w-5 shrink-0" />
+            <div>
+              <p className="font-medium">Server env missing</p>
+              <p className="text-xs mt-1 text-amber-100/80">
+                Add <code className="bg-muted px-1 rounded">TELEGRAM_API_ID</code> and{" "}
+                <code className="bg-muted px-1 rounded">TELEGRAM_API_HASH</code> to{" "}
+                <strong>Vercel → Environment Variables</strong> (from{" "}
+                <a href="https://my.telegram.org" className="underline" target="_blank" rel="noreferrer">
+                  my.telegram.org
+                </a>
+                ), redeploy, then use the button below.
+              </p>
+            </div>
+          </div>
+        )}
         {step === "idle" && (
           <>
             <div className="space-y-2">
@@ -205,10 +203,18 @@ export function TelegramConnectCard() {
                 placeholder="+919876543210"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
+                disabled={!apiReady}
               />
               <p className="text-xs text-muted-foreground">Include country code. Use the number of the Telegram account in your placement groups.</p>
             </div>
-            <LoadingButton variant="glow" loading={sendingCode} onClick={() => void sendCode()} disabled={!phone.trim()}>
+            <LoadingButton
+              variant="glow"
+              size="lg"
+              className="w-full sm:w-auto"
+              loading={sendingCode}
+              onClick={() => void sendCode()}
+              disabled={!apiReady || !phone.trim()}
+            >
               Send login code
             </LoadingButton>
           </>

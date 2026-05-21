@@ -403,9 +403,10 @@ async def on_new_message(event):
 
 async def main():
     if not API_ID or not API_HASH:
-        print("ERROR: Set TELEGRAM_API_ID and TELEGRAM_API_HASH in telegram-worker/.env")
+        print("ERROR: Set TELEGRAM_API_ID and TELEGRAM_API_HASH in telegram-worker/.env", flush=True)
         return
-    print(f"WEB_APP_URL={WEB_APP_URL}")
+    print("placemint telegram-worker starting…", flush=True)
+    print(f"WEB_APP_URL={WEB_APP_URL}", flush=True)
     print(f"WORKER_SECRET={'set' if WORKER_SECRET else 'MISSING'}")
     print("Connecting to Telegram (waits until Settings → Connect Telegram is done)…")
     await wait_for_telegram()

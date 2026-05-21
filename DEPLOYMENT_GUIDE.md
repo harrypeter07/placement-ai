@@ -45,7 +45,24 @@ You can deploy in either mode:
 
 ---
 
-## 3) Environment variables
+## 3) Correct deploy order (read this first)
+
+Telegram login happens on **Vercel** (the web app), not on Render. The worker only **reads** that session from MongoDB.
+
+| Step | What | Why |
+|------|------|-----|
+| **1** | Deploy **Vercel** (web app) with all env vars | APIs for login + session storage live here |
+| **2** | Open your **live Vercel URL** → sign in (Google) | Auth for Settings |
+| **3** | **Settings → Connect Telegram** (phone + OTP) | Saves session to MongoDB |
+| **4** | Deploy **Render background worker** | Polls Vercel for session, then runs Telethon |
+
+You do **not** need Telegram connected before Render deploys — the worker can wait. You **do** need Vercel live **before** Connect Telegram (step 3).
+
+**Same `MONGODB_URI` on Vercel and Render** — otherwise the worker never sees your session.
+
+---
+
+## 4) Environment variables
 
 ## A) Vercel (web app)
 
@@ -81,7 +98,7 @@ Set these in **Render Worker service env**:
 
 ---
 
-## 4) Google Cloud changes required
+## 5) Google Cloud changes required
 
 Open **Google Cloud Console -> APIs & Services -> Credentials -> OAuth 2.0 Client**.
 
@@ -103,9 +120,29 @@ Also ensure on OAuth consent screen that app includes required scopes used by ap
 
 ---
 
-## 5) Deploy worker on Render
+## 6) Deploy worker on Render
 
 This repo already includes `render.yaml`.
+
+### CRITICAL: use a Background Worker, not a Web Service
+
+If Render logs show:
+
+`No open ports detected` → `Port scan timeout` → `Timed Out`
+
+you created a **Web Service** by mistake. `listener.py` does not open an HTTP port.
+
+**Fix:**
+
+1. Render Dashboard → your service → **Settings**
+2. If there is no “Background Worker” type, **delete** this service
+3. **New +** → **Background Worker** (not Web Service)
+4. Connect repo, set:
+   - **Build command:** `pip install -r telegram-worker/requirements.txt`
+   - **Start command:** `cd telegram-worker && python listener.py`
+5. Add env vars (see below)
+
+Or use **Blueprint** from `render.yaml` — it creates `placemint-telegram-worker` as `type: worker` automatically.
 
 ### Python version (important)
 
@@ -148,7 +185,7 @@ You no longer need `TELEGRAM_GROUP_IDS` unless you want a legacy fallback before
 
 ---
 
-## 6) Post-deploy verification checklist
+## 7) Post-deploy verification checklist
 
 1. Visit `<vercel-url>/api/health` and confirm web app responds.
 2. Login with Google once.

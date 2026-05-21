@@ -29,7 +29,7 @@ interface TelegramStatus {
   setup: Record<string, string>;
 }
 
-export function TelegramSetupCard() {
+export function TelegramSetupCard({ hideConnect = false }: { hideConnect?: boolean }) {
   const [status, setStatus] = useState<TelegramStatus | null>(null);
   const [testMsg, setTestMsg] = useState(SAMPLE_MESSAGE);
   const [testing, setTesting] = useState(false);
@@ -64,7 +64,7 @@ export function TelegramSetupCard() {
 
   return (
     <div className="space-y-4">
-      <TelegramConnectCard />
+      {!hideConnect && <TelegramConnectCard />}
 
       <Card className="glass">
         <CardHeader>
