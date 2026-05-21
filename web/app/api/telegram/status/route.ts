@@ -10,16 +10,12 @@ export const runtime = "nodejs";
 
 const WORKER_STALE_MS = 2 * 60 * 1000;
 
-function isWorkerOnline(
-  status: string,
-  updatedAt: Date,
-  groupsMonitored: number
-): boolean {
-  return (
-    status === "online" &&
-    Date.now() - updatedAt.getTime() < WORKER_STALE_MS &&
-    groupsMonitored >= 0
-  );
+function isWorkerOnline(status: string, updatedAt: Date): boolean {
+  return status === "online" && Date.now() - updatedAt.getTime() < WORKER_STALE_MS;
+}
+
+function isWorkerWaiting(status: string, updatedAt: Date): boolean {
+  return status === "waiting" && Date.now() - updatedAt.getTime() < WORKER_STALE_MS;
 }
 
 export async function GET() {
@@ -30,6 +26,7 @@ export async function GET() {
       status: string;
       groupsMonitored: number;
       updatedAt: Date;
+      lastError?: string;
     } | null = null;
     let lastTelegramDeadline: { createdAt?: Date; company?: string } | null = null;
     let telegramDeadlineCount = 0;
@@ -46,6 +43,7 @@ export async function GET() {
           status: doc.status,
           groupsMonitored: doc.groupsMonitored,
           updatedAt: doc.updatedAt,
+          lastError: doc.lastError,
         };
       }
       lastTelegramDeadline = await Deadline.findOne({
@@ -68,12 +66,15 @@ export async function GET() {
           status: mem.status,
           groupsMonitored: mem.groupsMonitored,
           updatedAt: mem.updatedAt,
+          lastError: mem.lastError,
         };
       }
     }
 
     const workerOnline =
-      !!heartbeat && isWorkerOnline(heartbeat.status, heartbeat.updatedAt, heartbeat.groupsMonitored);
+      !!heartbeat && isWorkerOnline(heartbeat.status, heartbeat.updatedAt);
+    const workerWaiting =
+      !!heartbeat && isWorkerWaiting(heartbeat.status, heartbeat.updatedAt);
 
     const workerConfigured = !!process.env.TELEGRAM_WORKER_SECRET;
 
@@ -85,11 +86,17 @@ export async function GET() {
       telegramAccountConnected = !!sessionDoc?.sessionString;
     }
 
+    let workerStatus: string = heartbeat ? "stale" : "offline";
+    if (workerOnline) workerStatus = "online";
+    else if (workerWaiting) workerStatus = "waiting";
+
     return NextResponse.json({
       connected: workerOnline,
       telegramAccountConnected,
       workerConfigured,
-      workerStatus: workerOnline ? "online" : heartbeat ? "stale" : "offline",
+      workerStatus,
+      workerWaiting,
+      workerLastError: heartbeat?.lastError,
       groupsMonitored: heartbeat?.groupsMonitored ?? 0,
       lastWorkerPing: heartbeat?.updatedAt ?? null,
       lastIngestedAt: lastTelegramDeadline?.createdAt ?? null,

@@ -172,7 +172,7 @@ export function TelegramConnectCard() {
             )}
           </div>
           <p className="text-sm text-muted-foreground">
-            Redeploy or restart the worker after connecting. Then enable groups in{" "}
+            The Render worker checks every 30s and connects automatically. Then enable groups in{" "}
             <strong>Notifications</strong>.
           </p>
           <LoadingButton variant="outline" size="sm" loading={disconnecting} onClick={() => void disconnect()}>

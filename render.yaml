@@ -15,6 +15,12 @@ services:
         sync: false
       - key: GEMINI_API_KEY
         sync: false
+      - key: TELEGRAM_API_ID
+        sync: false
+      - key: TELEGRAM_API_HASH
+        sync: false
+      - key: TELEGRAM_WORKER_SECRET
+        sync: false
 
   - type: worker
     name: placemint-telegram-worker

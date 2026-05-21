@@ -18,6 +18,8 @@ Package: 45 LPA`;
 interface TelegramStatus {
   connected: boolean;
   telegramAccountConnected?: boolean;
+  workerWaiting?: boolean;
+  workerLastError?: string;
   workerStatus: string;
   groupsMonitored: number;
   telegramDeadlines: number;
@@ -74,7 +76,11 @@ export function TelegramSetupCard() {
         <CardContent className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm text-muted-foreground">Worker heartbeat:</span>
-            <Badge variant={status?.connected ? "success" : "warning"}>
+            <Badge
+              variant={
+                status?.connected ? "success" : status?.workerWaiting ? "secondary" : "warning"
+              }
+            >
               {status?.workerStatus ?? "checking…"}
             </Badge>
             {status && (
@@ -85,7 +91,12 @@ export function TelegramSetupCard() {
           </div>
 
           {status?.telegramAccountConnected === false && (
-            <p className="text-sm text-amber-200/90">Connect Telegram above before starting the worker.</p>
+            <p className="text-sm text-amber-200/90">
+              Connect Telegram in the card above (production URL). Worker will pick it up automatically — no redeploy needed.
+            </p>
+          )}
+          {status?.workerWaiting && status?.workerLastError && (
+            <p className="text-sm text-muted-foreground">{status.workerLastError}</p>
           )}
 
           {status?.lastIngestedAt && (

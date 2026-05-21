@@ -1,6 +1,6 @@
 import asyncio
+import json
 import os
-import sys
 from datetime import datetime, timezone
 
 import aiohttp
@@ -27,6 +27,7 @@ WORKER_SECRET = os.getenv("TELEGRAM_WORKER_SECRET", "")
 READ_ONLY = os.getenv("TELEGRAM_READ_ONLY", "true").lower() in ("1", "true", "yes")
 HISTORY_LIMIT = int(os.getenv("TELEGRAM_HISTORY_LIMIT", "40"))
 DISCOVER_INTERVAL_SEC = int(os.getenv("TELEGRAM_DISCOVER_INTERVAL_SEC", "900"))
+SESSION_POLL_SEC = int(os.getenv("TELEGRAM_SESSION_POLL_SEC", "30"))
 
 seen_hashes: set[str] = set()
 group_titles: dict[int, str] = {}
@@ -41,36 +42,56 @@ except RuntimeError:
 client: TelegramClient | None = None
 
 
-async def fetch_session_string() -> str:
+async def fetch_session_string(verbose: bool = True) -> str:
     """Load Telethon StringSession from env or dashboard (saved via Settings OTP flow)."""
     env = os.getenv("TELEGRAM_SESSION_STRING", "").strip()
     if env:
+        if verbose:
+            print("Using TELEGRAM_SESSION_STRING from environment")
         return env
     if not WORKER_SECRET:
+        if verbose:
+            print("WARNING: TELEGRAM_WORKER_SECRET not set — cannot fetch session from dashboard")
         return ""
+    url = f"{WEB_APP_URL}/api/telegram/session"
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
-                f"{WEB_APP_URL}/api/telegram/session",
+                url,
                 params={"apiKey": WORKER_SECRET},
                 timeout=aiohttp.ClientTimeout(total=20),
             ) as resp:
+                body = await resp.text()
                 if resp.status == 200:
-                    data = await resp.json()
+                    data = json.loads(body) if body else {}
                     s = (data.get("sessionString") or "").strip()
                     if s:
-                        print("Loaded Telegram session from dashboard")
+                        if verbose:
+                            print("Loaded Telegram session from dashboard")
                         return s
                 if resp.status == 404:
-                    print("No Telegram session in dashboard — connect in Settings first")
+                    if verbose:
+                        print(
+                            f"No session at {url} — open your live app → Settings → Connect Telegram "
+                            f"(same MONGODB_URI as this worker)"
+                        )
+                elif resp.status == 401:
+                    if verbose:
+                        print(
+                            "Session API returned 401 — TELEGRAM_WORKER_SECRET must match on "
+                            "Render and Vercel exactly"
+                        )
                 else:
-                    print(f"Session fetch failed {resp.status}: {(await resp.text())[:120]}")
+                    if verbose:
+                        print(f"Session fetch {resp.status} from {url}: {body[:200]}")
     except Exception as e:
-        print(f"Session fetch failed: {e}")
+        if verbose:
+            print(f"Session fetch failed ({url}): {e}")
     return ""
 
 
-async def connect_telegram() -> TelegramClient:
+async def try_connect_telegram() -> TelegramClient | None:
+    """Return connected client or None if session not available yet."""
     global client
     session_str = await fetch_session_string()
     if session_str:
@@ -79,7 +100,7 @@ async def connect_telegram() -> TelegramClient:
         if await c.is_user_authorized():
             client = c
             return c
-        print("WARNING: Dashboard session invalid — reconnect in Settings")
+        print("WARNING: Dashboard session invalid — reconnect in Settings → Connect Telegram")
 
     session_path = get_session_path()
     if os.path.exists(f"{session_path}.session"):
@@ -90,23 +111,44 @@ async def connect_telegram() -> TelegramClient:
             client = c
             return c
 
-    print(
-        "ERROR: No Telegram login.\n"
-        "  1. Open your app → Settings → Connect Telegram (phone + OTP)\n"
-        "  2. Redeploy this worker\n"
-        "  Or set TELEGRAM_SESSION_STRING / run listener locally once to create a file session."
-    )
-    sys.exit(1)
+    return None
 
 
-async def send_heartbeat(groups: int = 0, last_message_at: str | None = None, error: str | None = None):
+async def wait_for_telegram() -> TelegramClient:
+    """Poll until user connects Telegram in dashboard (keeps Render worker alive)."""
+    attempt = 0
+    while True:
+        attempt += 1
+        c = await try_connect_telegram()
+        if c:
+            return c
+
+        msg = (
+            "Waiting for Telegram login in dashboard "
+            f"(attempt {attempt}, retry in {SESSION_POLL_SEC}s)…"
+        )
+        print(msg)
+        await send_heartbeat(
+            groups=0,
+            error="Connect Telegram in Settings (phone + OTP), then worker will auto-connect",
+            status="waiting",
+        )
+        await asyncio.sleep(SESSION_POLL_SEC)
+
+
+async def send_heartbeat(
+    groups: int = 0,
+    last_message_at: str | None = None,
+    error: str | None = None,
+    status: str = "online",
+):
     if not WORKER_SECRET:
         print("WARNING: TELEGRAM_WORKER_SECRET not set — dashboard will show worker offline")
         return
     try:
         payload = {
             "apiKey": WORKER_SECRET,
-            "status": "online",
+            "status": status,
             "groupsMonitored": groups,
         }
         if last_message_at:
@@ -363,8 +405,10 @@ async def main():
     if not API_ID or not API_HASH:
         print("ERROR: Set TELEGRAM_API_ID and TELEGRAM_API_HASH in telegram-worker/.env")
         return
-    print("Connecting to Telegram using dashboard session...")
-    await connect_telegram()
+    print(f"WEB_APP_URL={WEB_APP_URL}")
+    print(f"WORKER_SECRET={'set' if WORKER_SECRET else 'MISSING'}")
+    print("Connecting to Telegram (waits until Settings → Connect Telegram is done)…")
+    await wait_for_telegram()
     assert client is not None
     client.add_event_handler(on_new_message, events.NewMessage())
     me = await client.get_me()

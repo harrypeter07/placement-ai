@@ -135,7 +135,7 @@ Render cannot run interactive `input()` for login codes. Use the dashboard inste
 1. Add `TELEGRAM_API_ID` + `TELEGRAM_API_HASH` to **Vercel** and **Render** worker env.
 2. Deploy web app, sign in, open **Settings**.
 3. Use **Connect Telegram** → enter phone → OTP (and 2FA password if enabled).
-4. Redeploy / restart the Render worker — it loads the session from `GET /api/telegram/session`.
+4. The Render worker polls for the session every 30s — no redeploy needed after connecting.
 
 ### Dynamic Telegram groups (no manual env IDs)
 

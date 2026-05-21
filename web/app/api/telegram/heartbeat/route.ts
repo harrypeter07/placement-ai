@@ -8,7 +8,7 @@ export const runtime = "nodejs";
 
 const schema = z.object({
   apiKey: z.string().min(1),
-  status: z.enum(["online", "offline"]).default("online"),
+  status: z.enum(["online", "offline", "waiting"]).default("online"),
   groupsMonitored: z.coerce.number().default(0),
   lastMessageAt: z.string().nullish(),
   lastError: z.string().nullish(),
