@@ -12,6 +12,7 @@ const schema = z.object({
   groupsMonitored: z.coerce.number().default(0),
   lastMessageAt: z.string().nullish(),
   lastError: z.string().nullish(),
+  detailLog: z.string().max(8000).nullish(),
 });
 
 export async function POST(req: Request) {
@@ -37,7 +38,12 @@ export async function POST(req: Request) {
       groupsMonitored: parsed.data.groupsMonitored,
       lastMessageAt: parsed.data.lastMessageAt ? new Date(parsed.data.lastMessageAt) : undefined,
       lastError: parsed.data.lastError ?? undefined,
+      detailLog: parsed.data.detailLog ?? undefined,
     };
+
+    if (parsed.data.status === "waiting" && parsed.data.detailLog) {
+      console.info("[heartbeat] worker waiting:\n" + parsed.data.detailLog.slice(0, 1500));
+    }
 
     try {
       await connectDB();
@@ -49,6 +55,7 @@ export async function POST(req: Request) {
           groupsMonitored: parsed.data.groupsMonitored,
           lastMessageAt: memoryPayload.lastMessageAt,
           lastError: parsed.data.lastError,
+          detailLog: parsed.data.detailLog,
         },
         { upsert: true, new: true }
       );

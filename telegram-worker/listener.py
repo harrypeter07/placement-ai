@@ -48,7 +48,9 @@ _worker_status: dict[str, str | int] = {
     "groups": 0,
     "lastKeepaliveAt": "",
     "keepaliveOk": 0,
+    "waitAttempt": 0,
 }
+_last_detail_log: list[str] = []
 
 
 def is_valid_telethon_string_session(session_str: str) -> bool:
@@ -68,18 +70,54 @@ def is_valid_telethon_string_session(session_str: str) -> bool:
         return False
 
 
+def _log_diag(line: str, verbose: bool = True) -> None:
+    """Append to detail log (shown on dashboard) and Render logs."""
+    _last_detail_log.append(line)
+    if len(_last_detail_log) > 40:
+        del _last_detail_log[0]
+    if verbose:
+        print(f"[session] {line}", flush=True)
+
+
+def _startup_config_log() -> None:
+    """One-time config summary (no secrets printed)."""
+    print("=== Worker config check ===", flush=True)
+    print(f"  WEB_APP_URL={WEB_APP_URL}", flush=True)
+    print(f"  TELEGRAM_API_ID={'set' if API_ID else 'MISSING'}", flush=True)
+    print(f"  TELEGRAM_API_HASH={'set' if API_HASH else 'MISSING'}", flush=True)
+    print(
+        f"  TELEGRAM_WORKER_SECRET={'set (' + str(len(WORKER_SECRET)) + ' chars)' if WORKER_SECRET else 'MISSING — dashboard shows offline'}",
+        flush=True,
+    )
+    print(f"  MONGODB_URI={'set' if os.getenv('MONGODB_URI') else 'MISSING'}", flush=True)
+    print(f"  TELEGRAM_SESSION_STRING env={'set' if os.getenv('TELEGRAM_SESSION_STRING') else 'not set'}", flush=True)
+    print(f"  PORT={os.getenv('PORT', 'none')} (web service if set)", flush=True)
+    print(f"  RENDER_EXTERNAL_URL={os.getenv('RENDER_EXTERNAL_URL', 'not set')}", flush=True)
+
+
 async def fetch_session_string(verbose: bool = True) -> str:
     """Load Telethon StringSession from env or dashboard (saved via Settings OTP flow)."""
+    global _last_detail_log
+    _last_detail_log = []
+    _log_diag(f"Checking session at {datetime.now(timezone.utc).isoformat()}", verbose)
+
     env = os.getenv("TELEGRAM_SESSION_STRING", "").strip()
     if env:
-        if verbose:
-            print("Using TELEGRAM_SESSION_STRING from environment")
-        return env
+        if is_valid_telethon_string_session(env):
+            _log_diag("Using TELEGRAM_SESSION_STRING from environment (valid Telethon format)", verbose)
+            return env
+        _log_diag("TELEGRAM_SESSION_STRING env is set but INVALID format (need Telethon string)", verbose)
+
     if not WORKER_SECRET:
-        if verbose:
-            print("WARNING: TELEGRAM_WORKER_SECRET not set — cannot fetch session from dashboard")
+        _log_diag("BLOCKER: TELEGRAM_WORKER_SECRET not set on Render", verbose)
+        _log_diag("Fix: Render → Environment → add same secret as Vercel", verbose)
         return ""
+
+    if not WEB_APP_URL or WEB_APP_URL.startswith("http://localhost"):
+        _log_diag(f"WARNING: WEB_APP_URL={WEB_APP_URL} — should be your live Vercel URL", verbose)
+
     url = f"{WEB_APP_URL}/api/telegram/session"
+    _log_diag(f"GET {url}?apiKey=***", verbose)
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(
@@ -88,42 +126,58 @@ async def fetch_session_string(verbose: bool = True) -> str:
                 timeout=aiohttp.ClientTimeout(total=20),
             ) as resp:
                 body = await resp.text()
+                _log_diag(f"HTTP {resp.status} (body {len(body)} bytes)", verbose)
+
                 if resp.status == 200:
                     data = json.loads(body) if body else {}
                     telethon = (data.get("telethonSessionString") or "").strip()
                     legacy = (data.get("sessionString") or "").strip()
+                    fmt = data.get("sessionFormat") or "unknown"
+                    phone = data.get("phoneNumber") or "?"
+                    _log_diag(f"API: sessionFormat={fmt}, phone={phone}", verbose)
+                    _log_diag(
+                        f"API: telethonSession={'yes' if telethon else 'no'} ({len(telethon)} chars), "
+                        f"gramjsSession={'yes' if legacy else 'no'} ({len(legacy)} chars)",
+                        verbose,
+                    )
+
                     s = telethon if is_valid_telethon_string_session(telethon) else ""
                     if not s and is_valid_telethon_string_session(legacy):
                         s = legacy
+                        _log_diag("Using legacy sessionString (valid Telethon pack)", verbose)
                     if s:
-                        if verbose:
-                            fmt = data.get("sessionFormat") or ("telethon" if telethon else "legacy")
-                            print(f"Loaded Telegram session from dashboard ({fmt})")
+                        _log_diag(f"SUCCESS: loaded session from Vercel API ({fmt})", verbose)
                         return s
+
                     if telethon or legacy:
-                        if verbose:
-                            print(
-                                "Dashboard session is GramJS-only — open Settings → Connect Telegram "
-                                "and sign in again once to sync the Render worker session"
-                            )
+                        _log_diag(
+                            "BLOCKER: Session in DB is GramJS-only — Telethon worker cannot use it",
+                            verbose,
+                        )
+                        _log_diag(
+                            "Fix: Vercel → Settings → Sync Render worker session (or reconnect Telegram)",
+                            verbose,
+                        )
+                    else:
+                        _log_diag("BLOCKER: API 200 but session fields empty", verbose)
+                    return ""
+
                 if resp.status == 404:
-                    if verbose:
-                        print(
-                            f"No session at {url} — open your live app → Settings → Connect Telegram "
-                            f"(same MONGODB_URI as this worker)"
-                        )
+                    _log_diag("BLOCKER: 404 No session in MongoDB (via Vercel API)", verbose)
+                    _log_diag("Fix: Vercel → Settings → Connect Telegram (phone + OTP)", verbose)
+                    _log_diag("Also: MONGODB_URI must match on Vercel and Render", verbose)
                 elif resp.status == 401:
-                    if verbose:
-                        print(
-                            "Session API returned 401 — TELEGRAM_WORKER_SECRET must match on "
-                            "Render and Vercel exactly"
-                        )
+                    _log_diag("BLOCKER: 401 Unauthorized — TELEGRAM_WORKER_SECRET mismatch", verbose)
+                    _log_diag("Fix: copy exact same TELEGRAM_WORKER_SECRET to Vercel AND Render", verbose)
                 else:
-                    if verbose:
-                        print(f"Session fetch {resp.status} from {url}: {body[:200]}")
+                    _log_diag(f"BLOCKER: unexpected HTTP {resp.status}: {body[:300]}", verbose)
+    except aiohttp.ClientConnectorError as e:
+        _log_diag(f"BLOCKER: cannot reach Vercel ({url}): {e}", verbose)
+        _log_diag("Fix: set WEB_APP_URL on Render to your live Vercel URL (https://...)", verbose)
+    except asyncio.TimeoutError:
+        _log_diag(f"BLOCKER: timeout calling {url}", verbose)
     except Exception as e:
-        if verbose:
-            print(f"Session fetch failed ({url}): {e}")
+        _log_diag(f"BLOCKER: session fetch error: {type(e).__name__}: {e}", verbose)
     return ""
 
 
@@ -133,30 +187,39 @@ async def try_connect_telegram() -> TelegramClient | None:
     session_str = await fetch_session_string()
     if session_str:
         if not is_valid_telethon_string_session(session_str):
-            print(
-                "WARNING: Invalid Telethon session string — reconnect in Settings → Connect Telegram"
-            )
+            _log_diag("BLOCKER: session string failed Telethon format validation")
             return None
         try:
+            _log_diag("Connecting Telethon client…", True)
             c = TelegramClient(StringSession(session_str), API_ID, API_HASH)
             await c.connect()
             if await c.is_user_authorized():
+                me = await c.get_me()
+                _log_diag(
+                    f"SUCCESS: Telegram authorized as {me.first_name} (@{me.username or 'no-username'})",
+                    True,
+                )
                 client = c
                 return c
-            print("WARNING: Dashboard session invalid — reconnect in Settings → Connect Telegram")
+            _log_diag("BLOCKER: session exists but Telegram says NOT authorized (expired?)", True)
+            _log_diag("Fix: reconnect Telegram in Vercel Settings", True)
         except struct.error as e:
-            print(f"WARNING: Could not load Telegram session ({e}) — reconnect in Settings")
+            _log_diag(f"BLOCKER: struct.error loading session — GramJS vs Telethon mismatch: {e}", True)
         except Exception as e:
-            print(f"WARNING: Telegram connect failed ({e})")
+            _log_diag(f"BLOCKER: Telethon connect failed: {type(e).__name__}: {e}", True)
 
     session_path = get_session_path()
     if os.path.exists(f"{session_path}.session"):
-        c = TelegramClient(session_path, API_ID, API_HASH)
-        await c.connect()
-        if await c.is_user_authorized():
-            print("Using legacy file session from telegram-worker/sessions/")
-            client = c
-            return c
+        _log_diag(f"Trying legacy file session at {session_path}.session", True)
+        try:
+            c = TelegramClient(session_path, API_ID, API_HASH)
+            await c.connect()
+            if await c.is_user_authorized():
+                _log_diag("SUCCESS: legacy file session authorized", True)
+                client = c
+                return c
+        except Exception as e:
+            _log_diag(f"Legacy file session failed: {e}", True)
 
     return None
 
@@ -166,19 +229,26 @@ async def wait_for_telegram() -> TelegramClient:
     attempt = 0
     while True:
         attempt += 1
+        _worker_status["waitAttempt"] = attempt
         c = await try_connect_telegram()
         if c:
             return c
 
-        msg = (
-            "Waiting for Telegram login in dashboard "
-            f"(attempt {attempt}, retry in {SESSION_POLL_SEC}s)…"
-        )
-        print(msg)
+        summary = "waiting_for_session"
+        if _last_detail_log:
+            for line in reversed(_last_detail_log):
+                if line.startswith("BLOCKER:"):
+                    summary = line.replace("BLOCKER:", "").strip()[:200]
+                    break
+
+        detail = "\n".join(_last_detail_log[-25:])
+        msg = f"Waiting for Telegram (attempt {attempt}, retry in {SESSION_POLL_SEC}s) — {summary}"
+        print(msg, flush=True)
         await send_heartbeat(
             groups=0,
-            error="Connect Telegram in Settings (phone + OTP), then worker will auto-connect",
+            error=summary,
             status="waiting",
+            detail_log=detail,
         )
         await asyncio.sleep(SESSION_POLL_SEC)
 
@@ -188,9 +258,10 @@ async def send_heartbeat(
     last_message_at: str | None = None,
     error: str | None = None,
     status: str = "online",
+    detail_log: str | None = None,
 ):
     if not WORKER_SECRET:
-        print("WARNING: TELEGRAM_WORKER_SECRET not set — dashboard will show worker offline")
+        print("WARNING: TELEGRAM_WORKER_SECRET not set — dashboard will show worker offline", flush=True)
         return
     try:
         payload = {
@@ -201,20 +272,35 @@ async def send_heartbeat(
         if last_message_at:
             payload["lastMessageAt"] = last_message_at
         if error:
-            payload["lastError"] = error
+            payload["lastError"] = (error or "")[:500]
+        log_text = detail_log or "\n".join(_last_detail_log[-30:])
+        if log_text:
+            payload["detailLog"] = log_text[:4000]
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{WEB_APP_URL}/api/telegram/heartbeat",
                 json=payload,
-                timeout=aiohttp.ClientTimeout(total=10),
+                timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
+                body = await resp.text()
                 if resp.status == 200:
-                    print(f"Heartbeat OK → {WEB_APP_URL}")
+                    if status == "waiting":
+                        print(f"Heartbeat waiting → Vercel OK ({summary_line(log_text)})", flush=True)
+                    else:
+                        print(f"Heartbeat {status} → {WEB_APP_URL}", flush=True)
                 else:
-                    text = await resp.text()
-                    print(f"Heartbeat failed {resp.status}: {text[:200]}")
+                    print(f"Heartbeat POST failed {resp.status}: {body[:300]}", flush=True)
+                    if resp.status == 401:
+                        print("  → TELEGRAM_WORKER_SECRET mismatch between Render and Vercel", flush=True)
     except Exception as e:
-        print(f"Heartbeat failed (check WEB_APP_URL={WEB_APP_URL}): {e}")
+        print(f"Heartbeat failed (WEB_APP_URL={WEB_APP_URL}): {type(e).__name__}: {e}", flush=True)
+
+
+def summary_line(detail: str) -> str:
+    for line in detail.splitlines():
+        if "BLOCKER:" in line:
+            return line.strip()[:80]
+    return "see detailLog on dashboard"
 
 
 async def discover_and_sync_all_groups():
@@ -500,15 +586,29 @@ async def start_render_health_server() -> web.AppRunner | None:
         return None
 
     async def health(_request: web.Request) -> web.Response:
+        wait_reason = ""
+        for line in reversed(_last_detail_log):
+            if line.startswith("BLOCKER:"):
+                wait_reason = line.replace("BLOCKER:", "").strip()
+                break
         return web.json_response(
             {
                 "ok": True,
                 "service": "placemint-telegram-worker",
                 "mode": "web",
                 "telegram": _worker_status.get("telegram"),
+                "waitReason": wait_reason or None,
+                "waitAttempt": _worker_status.get("waitAttempt", 0),
                 "monitoredGroups": _worker_status.get("groups", 0),
                 "lastKeepaliveAt": _worker_status.get("lastKeepaliveAt"),
                 "keepalivePings": _worker_status.get("keepaliveOk", 0),
+                "config": {
+                    "webAppUrl": WEB_APP_URL,
+                    "workerSecretSet": bool(WORKER_SECRET),
+                    "apiIdSet": bool(API_ID),
+                    "mongoUriSet": bool(os.getenv("MONGODB_URI")),
+                },
+                "detailLog": _last_detail_log[-20:],
             }
         )
 
@@ -579,8 +679,7 @@ async def main() -> None:
         return
 
     print("placemint telegram-worker starting…", flush=True)
-    print(f"WEB_APP_URL={WEB_APP_URL}", flush=True)
-    print(f"WORKER_SECRET={'set' if WORKER_SECRET else 'MISSING'}", flush=True)
+    _startup_config_log()
 
     # Bind PORT first so Render Web Service deploy does not time out
     http_runner = await start_render_health_server()

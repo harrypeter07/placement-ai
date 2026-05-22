@@ -5,6 +5,7 @@ export interface WorkerHeartbeatSnapshot {
   groupsMonitored: number;
   lastMessageAt?: Date;
   lastError?: string;
+  detailLog?: string;
   updatedAt: Date;
 }
 

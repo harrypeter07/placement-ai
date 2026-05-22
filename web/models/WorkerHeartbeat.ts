@@ -7,6 +7,8 @@ export interface IWorkerHeartbeat {
   groupsMonitored: number;
   lastMessageAt?: Date;
   lastError?: string;
+  /** Multi-line diagnostic log from worker (why waiting / errors) */
+  detailLog?: string;
   updatedAt: Date;
 }
 
@@ -17,6 +19,7 @@ const WorkerHeartbeatSchema = new Schema<IWorkerHeartbeat>(
     groupsMonitored: { type: Number, default: 0 },
     lastMessageAt: { type: Date },
     lastError: { type: String },
+    detailLog: { type: String },
   },
   { timestamps: true }
 );

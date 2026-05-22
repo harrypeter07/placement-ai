@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { MessageSquare, Send } from "lucide-react";
+import { MessageSquare, RefreshCw, Send } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,9 @@ interface TelegramStatus {
   telegramAccountConnected?: boolean;
   workerWaiting?: boolean;
   workerLastError?: string;
+  workerDetailLog?: string;
+  suggestedFix?: string;
+  hasTelethonSession?: boolean;
   workerStatus: string;
   groupsMonitored: number;
   telegramDeadlines: number;
@@ -76,6 +79,9 @@ export function TelegramSetupCard({ hideConnect = false }: { hideConnect?: boole
         <CardContent className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm text-muted-foreground">Worker heartbeat:</span>
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => void load()} title="Refresh status">
+              <RefreshCw className="h-3.5 w-3.5" />
+            </Button>
             <Badge
               variant={
                 status?.connected ? "success" : status?.workerWaiting ? "secondary" : "warning"
@@ -95,8 +101,35 @@ export function TelegramSetupCard({ hideConnect = false }: { hideConnect?: boole
               Connect Telegram in the card above (production URL). Worker will pick it up automatically — no redeploy needed.
             </p>
           )}
-          {status?.workerWaiting && status?.workerLastError && (
-            <p className="text-sm text-muted-foreground">{status.workerLastError}</p>
+          {status?.workerWaiting && (
+            <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 space-y-2 text-sm">
+              <p className="font-medium text-amber-200">Worker waiting — why & how to fix</p>
+              {status.suggestedFix && (
+                <p className="text-foreground">
+                  <strong>Fix:</strong> {status.suggestedFix}
+                </p>
+              )}
+              {status.workerLastError && (
+                <p className="text-muted-foreground">{status.workerLastError}</p>
+              )}
+              {status.hasTelethonSession === false && status.telegramAccountConnected && (
+                <p className="text-amber-100/90">
+                  Telegram is connected for the website but <strong>Render worker session is missing</strong> — use
+                  &quot;Sync Render worker session&quot; above.
+                </p>
+              )}
+              {status.workerDetailLog && (
+                <pre className="text-[10px] leading-relaxed max-h-64 overflow-auto whitespace-pre-wrap rounded bg-black/40 p-2 text-muted-foreground font-mono">
+                  {status.workerDetailLog}
+                </pre>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Render logs: Dashboard → your worker → Logs. Health:{" "}
+                <code className="bg-muted px-1 rounded">/health</code> shows{" "}
+                <code className="bg-muted px-1 rounded">waitReason</code> and{" "}
+                <code className="bg-muted px-1 rounded">detailLog</code>.
+              </p>
+            </div>
           )}
 
           {status?.lastIngestedAt && (

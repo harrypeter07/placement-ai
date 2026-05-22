@@ -5,6 +5,7 @@ import { WorkerHeartbeat } from "@/models/WorkerHeartbeat";
 import { requireAuth } from "@/lib/api-auth";
 import { getMemoryHeartbeat } from "@/lib/worker-heartbeat-store";
 import { TelegramWorkerSession } from "@/models/TelegramWorkerSession";
+import { buildTelegramWorkerDiagnostics } from "@/lib/telegram-worker-diagnostics";
 
 export const runtime = "nodejs";
 
@@ -27,6 +28,7 @@ export async function GET() {
       groupsMonitored: number;
       updatedAt: Date;
       lastError?: string;
+      detailLog?: string;
     } | null = null;
     let lastTelegramDeadline: { createdAt?: Date; company?: string } | null = null;
     let telegramDeadlineCount = 0;
@@ -44,6 +46,7 @@ export async function GET() {
           groupsMonitored: doc.groupsMonitored,
           updatedAt: doc.updatedAt,
           lastError: doc.lastError,
+          detailLog: doc.detailLog,
         };
       }
       lastTelegramDeadline = await Deadline.findOne({
@@ -67,6 +70,7 @@ export async function GET() {
           groupsMonitored: mem.groupsMonitored,
           updatedAt: mem.updatedAt,
           lastError: mem.lastError,
+          detailLog: mem.detailLog,
         };
       }
     }
@@ -79,12 +83,20 @@ export async function GET() {
     const workerConfigured = !!process.env.TELEGRAM_WORKER_SECRET;
 
     let telegramAccountConnected = false;
+    let hasTelethonSession = false;
     if (dbOnline) {
       const sessionDoc = await TelegramWorkerSession.findOne({ key: "default" })
-        .select("+sessionString")
+        .select("+sessionString +telethonSessionString")
         .lean();
       telegramAccountConnected = !!sessionDoc?.sessionString;
+      const th = sessionDoc?.telethonSessionString?.trim() || "";
+      hasTelethonSession = th.length >= 40 && th.startsWith("1");
     }
+
+    const serverDiagnostics =
+      workerWaiting || !telegramAccountConnected || !hasTelethonSession
+        ? await buildTelegramWorkerDiagnostics()
+        : null;
 
     let workerStatus: string = heartbeat ? "stale" : "offline";
     if (workerOnline) workerStatus = "online";
@@ -93,10 +105,16 @@ export async function GET() {
     return NextResponse.json({
       connected: workerOnline,
       telegramAccountConnected,
+      hasTelethonSession,
       workerConfigured,
       workerStatus,
       workerWaiting,
       workerLastError: heartbeat?.lastError,
+      workerDetailLog:
+        heartbeat?.detailLog ||
+        serverDiagnostics?.detailLog ||
+        undefined,
+      suggestedFix: serverDiagnostics?.suggestedFix,
       groupsMonitored: heartbeat?.groupsMonitored ?? 0,
       lastWorkerPing: heartbeat?.updatedAt ?? null,
       lastIngestedAt: lastTelegramDeadline?.createdAt ?? null,
