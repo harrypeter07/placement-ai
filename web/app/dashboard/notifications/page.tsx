@@ -81,6 +81,7 @@ export default function NotificationsPage() {
   const [togglingGroupId, setTogglingGroupId] = useState<string | null>(null);
   const [groupSearch, setGroupSearch] = useState("");
   const [runningInsights, setRunningInsights] = useState(false);
+  const [syncingCatalog, setSyncingCatalog] = useState(false);
   const insightsRan = useRef(false);
 
   const {
@@ -199,6 +200,26 @@ export default function NotificationsPage() {
     return () => clearInterval(id);
   }, [groups, runInsights]);
 
+  async function syncAllGroups() {
+    setSyncingCatalog(true);
+    try {
+      const res = await fetch("/api/telegram/groups/discover", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Sync failed");
+      cache.setTelegramGroups([]);
+      await refreshGroups();
+      toast.success(data.message || `Synced ${data.synced} groups`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Could not sync groups";
+      toast.error(msg);
+      if (msg.includes("Connect Telegram")) {
+        toast.message("Open Settings → Connect Telegram first");
+      }
+    } finally {
+      setSyncingCatalog(false);
+    }
+  }
+
   async function toggleMonitoring(groupId: string, enabled: boolean) {
     setTogglingGroupId(groupId);
     try {
@@ -276,14 +297,22 @@ export default function NotificationsPage() {
               )}
             </Button>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
+            <LoadingButton
+              variant="outline"
+              size="sm"
+              loading={syncingCatalog}
+              onClick={() => void syncAllGroups()}
+            >
+              <Users className="h-4 w-4 mr-1" /> Sync all groups
+            </LoadingButton>
             <LoadingButton
               variant="outline"
               size="sm"
               loading={refreshingGroups}
               onClick={() => void refreshGroups()}
             >
-              <RefreshCw className="h-4 w-4 mr-1" /> Refresh
+              <RefreshCw className="h-4 w-4 mr-1" /> Refresh list
             </LoadingButton>
             <LoadingButton variant="glow" size="sm" loading={runningInsights} onClick={() => void runInsights()}>
               <Sparkles className="h-4 w-4 mr-1" /> Run AI now
@@ -372,8 +401,20 @@ export default function NotificationsPage() {
                     Your Telegram groups
                   </h2>
                   <p className="text-xs text-muted-foreground mt-1">
-                    Groups sync automatically from the worker — no env editing. Turn{" "}
-                    <strong>Monitor</strong> ON for groups you want AI to watch.
+                    {groupList.length > 0 ? (
+                      <>
+                        <strong>{groupList.length}</strong> group(s)/channel(s) in catalog.
+                        Tap <strong>Sync all groups</strong> to load every chat from your Telegram account.
+                      </>
+                    ) : (
+                      <>
+                        Tap <strong>Sync all groups</strong> (after{" "}
+                        <Link href="/dashboard/settings#connect-telegram" className="text-primary underline">
+                          Connect Telegram
+                        </Link>
+                        ) to import all groups — not only old env IDs.
+                      </>
+                    )}
                     {monitoredCount > 0 && (
                       <span className="text-primary"> · {monitoredCount} monitored</span>
                     )}
@@ -397,13 +438,17 @@ export default function NotificationsPage() {
                     ))}
                   </div>
                 ) : groupList.length === 0 ? (
-                  <div className="p-6 text-center text-sm text-muted-foreground">
+                  <div className="p-6 text-center text-sm text-muted-foreground space-y-3">
                     <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-40" />
-                    <p className="font-medium">No groups synced yet</p>
-                    <p className="mt-2 text-xs">
-                      Start the Telegram worker on Render. It discovers all groups/channels on your
-                      account and syncs them here within a few minutes.
+                    <p className="font-medium">No groups in catalog yet</p>
+                    <p className="text-xs">
+                      1. Connect Telegram in Settings
+                      <br />
+                      2. Click <strong>Sync all groups</strong> above to fetch every group/channel
                     </p>
+                    <LoadingButton variant="glow" size="sm" loading={syncingCatalog} onClick={() => void syncAllGroups()}>
+                      <Users className="h-4 w-4 mr-1" /> Sync all groups
+                    </LoadingButton>
                   </div>
                 ) : filteredGroups.length === 0 ? (
                   <div className="p-6 text-center text-sm text-muted-foreground">
@@ -427,8 +472,16 @@ export default function NotificationsPage() {
                             className="flex-1 text-left min-w-0"
                             onClick={() => selectGroup(g.groupId)}
                           >
-                            <p className="font-medium text-sm truncate">{g.title}</p>
+                            <p className="font-medium text-sm truncate flex items-center gap-1">
+                              {g.title}
+                              {g.kind === "channel" && (
+                                <Badge variant="outline" className="text-[8px] h-4 px-1 shrink-0">
+                                  channel
+                                </Badge>
+                              )}
+                            </p>
                             <p className="text-xs text-muted-foreground truncate mt-0.5">
+                              {g.username ? `@${g.username} · ` : ""}
                               {g.lastMessagePreview || "No messages yet"}
                             </p>
                           </button>

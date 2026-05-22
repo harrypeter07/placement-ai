@@ -1,6 +1,7 @@
 import { TelegramClient } from "telegram";
 import { StringSession } from "telegram/sessions";
 import { Api } from "telegram";
+import { utils } from "telegram";
 import { computeCheck } from "telegram/Password";
 import { mapTelegramAuthError } from "@/lib/telegram-auth-errors";
 import { normalizePhone, sanitizeOtpCode } from "@/lib/telegram-phone";
@@ -127,6 +128,46 @@ export async function completeTelegramLogin(
     e.expired = mapped.expired;
     e.invalidCode = mapped.invalidCode;
     throw e;
+  } finally {
+    await client.disconnect();
+  }
+}
+
+export type DiscoveredTelegramGroup = {
+  groupId: string;
+  title: string;
+  kind: "group" | "channel" | "supergroup";
+  username?: string;
+};
+
+/** List all groups/channels from the linked Telegram account (same as worker discover). */
+export async function discoverTelegramGroups(sessionString: string): Promise<DiscoveredTelegramGroup[]> {
+  const client = await createTelegramClient(sessionString);
+  try {
+    const dialogs = await client.getDialogs({ limit: 500 });
+    const groups: DiscoveredTelegramGroup[] = [];
+    for (const dialog of dialogs) {
+      if (!dialog.isGroup && !dialog.isChannel) continue;
+      const entity = dialog.entity;
+      if (!entity) continue;
+      let groupId: string;
+      try {
+        groupId = utils.getPeerId(entity).toString();
+      } catch {
+        groupId = dialog.id != null ? String(dialog.id) : "";
+      }
+      if (!groupId) continue;
+      const title = dialog.title || dialog.name || groupId;
+      const kind: DiscoveredTelegramGroup["kind"] = dialog.isChannel
+        ? "channel"
+        : dialog.isGroup
+          ? "group"
+          : "supergroup";
+      const username =
+        entity && "username" in entity && entity.username ? String(entity.username) : undefined;
+      groups.push({ groupId, title, kind, username });
+    }
+    return groups;
   } finally {
     await client.disconnect();
   }
