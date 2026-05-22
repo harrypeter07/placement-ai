@@ -2,5 +2,11 @@
   "framework": "nextjs",
   "installCommand": "[ -d web ] && cd web || true; npm install",
   "buildCommand": "[ -d web ] && cd web || true; npm run build",
-  "regions": ["bom1"]
+  "regions": ["bom1"],
+  "crons": [
+    {
+      "path": "/api/cron/worker-ping",
+      "schedule": "*/5 * * * *"
+    }
+  ]
 }

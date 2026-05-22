@@ -35,6 +35,8 @@ services:
         value: 3.11.9
       - key: PYTHONUNBUFFERED
         value: "1"
+      - key: KEEPALIVE_INTERVAL_SEC
+        value: "240"
       - key: TELEGRAM_API_ID
         sync: false
       - key: TELEGRAM_API_HASH

@@ -30,6 +30,7 @@ READ_ONLY = os.getenv("TELEGRAM_READ_ONLY", "true").lower() in ("1", "true", "ye
 HISTORY_LIMIT = int(os.getenv("TELEGRAM_HISTORY_LIMIT", "40"))
 DISCOVER_INTERVAL_SEC = int(os.getenv("TELEGRAM_DISCOVER_INTERVAL_SEC", "900"))
 SESSION_POLL_SEC = int(os.getenv("TELEGRAM_SESSION_POLL_SEC", "30"))
+KEEPALIVE_INTERVAL_SEC = int(os.getenv("KEEPALIVE_INTERVAL_SEC", "240"))
 
 seen_hashes: set[str] = set()
 group_titles: dict[int, str] = {}
@@ -42,7 +43,12 @@ except RuntimeError:
     asyncio.set_event_loop(loop)
 
 client: TelegramClient | None = None
-_worker_status: dict[str, str | int] = {"telegram": "starting", "groups": 0}
+_worker_status: dict[str, str | int] = {
+    "telegram": "starting",
+    "groups": 0,
+    "lastKeepaliveAt": "",
+    "keepaliveOk": 0,
+}
 
 
 def is_valid_telethon_string_session(session_str: str) -> bool:
@@ -443,6 +449,46 @@ async def on_new_message(event):
         print(f"  DB duplicate: {company}")
 
 
+def _public_worker_urls() -> list[str]:
+    """URLs to ping so Render Web Service stays warm (external inbound traffic)."""
+    urls: list[str] = []
+    for key in ("RENDER_EXTERNAL_URL", "WORKER_PUBLIC_URL", "PUBLIC_URL"):
+        raw = (os.getenv(key) or "").strip().rstrip("/")
+        if raw and raw not in urls:
+            urls.append(raw)
+    port = int(os.getenv("PORT", "0") or "0")
+    if port > 0:
+        local = f"http://127.0.0.1:{port}"
+        if local not in urls:
+            urls.append(local)
+    return urls
+
+
+async def keepalive_loop() -> None:
+    """Ping /health on a schedule — prevents Render free/paid idle spin-down."""
+    urls = _public_worker_urls()
+    if not urls:
+        return
+    print(
+        f"Keepalive every {KEEPALIVE_INTERVAL_SEC}s → {', '.join(urls)}",
+        flush=True,
+    )
+    while True:
+        for base in urls:
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.get(
+                        f"{base}/health",
+                        timeout=aiohttp.ClientTimeout(total=25),
+                    ) as resp:
+                        if resp.status == 200:
+                            _worker_status["keepaliveOk"] = int(_worker_status.get("keepaliveOk", 0)) + 1
+                            _worker_status["lastKeepaliveAt"] = datetime.now(timezone.utc).isoformat()
+            except Exception as e:
+                print(f"Keepalive ping failed ({base}): {e}", flush=True)
+        await asyncio.sleep(KEEPALIVE_INTERVAL_SEC)
+
+
 async def start_render_health_server() -> web.AppRunner | None:
     """
     Render Web Services require a bound PORT before deploy health checks pass.
@@ -458,8 +504,11 @@ async def start_render_health_server() -> web.AppRunner | None:
             {
                 "ok": True,
                 "service": "placemint-telegram-worker",
+                "mode": "web",
                 "telegram": _worker_status.get("telegram"),
                 "monitoredGroups": _worker_status.get("groups", 0),
+                "lastKeepaliveAt": _worker_status.get("lastKeepaliveAt"),
+                "keepalivePings": _worker_status.get("keepaliveOk", 0),
             }
         )
 
@@ -509,6 +558,21 @@ async def run_telegram_worker() -> None:
     await client.run_until_disconnected()
 
 
+async def run_telegram_worker_loop() -> None:
+    """Restart Telegram after disconnect/crash so Web Service process stays up."""
+    while True:
+        try:
+            await run_telegram_worker()
+            _worker_status["telegram"] = "disconnected"
+            print("Telegram disconnected — reconnecting in 30s…", flush=True)
+        except Exception as e:
+            _worker_status["telegram"] = "error"
+            print(f"Telegram worker error: {e} — retry in 60s", flush=True)
+            await asyncio.sleep(60)
+            continue
+        await asyncio.sleep(30)
+
+
 async def main() -> None:
     if not API_ID or not API_HASH:
         print("ERROR: Set TELEGRAM_API_ID and TELEGRAM_API_HASH", flush=True)
@@ -523,10 +587,13 @@ async def main() -> None:
 
     try:
         if http_runner:
-            print("Telegram worker running in background (HTTP health on PORT)", flush=True)
-            await run_telegram_worker()
+            print("Web Service mode: HTTP + Telegram + keepalive in parallel", flush=True)
+            asyncio.create_task(keepalive_loop())
+            asyncio.create_task(run_telegram_worker_loop())
+            stop = asyncio.Event()
+            await stop.wait()
         else:
-            await run_telegram_worker()
+            await run_telegram_worker_loop()
     finally:
         if http_runner:
             await http_runner.cleanup()

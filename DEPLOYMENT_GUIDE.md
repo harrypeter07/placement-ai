@@ -124,18 +124,45 @@ Also ensure on OAuth consent screen that app includes required scopes used by ap
 
 This repo already includes `render.yaml`.
 
-### Web Service OR Background Worker (both work now)
+### Web Service (paid) — keep it always active
 
-**Web Service (what you deployed):** `listener.py` starts a small HTTP server on Render’s `PORT` at `/health` immediately, then runs Telegram in the background. Set:
+Your worker is designed to run as a **Render Web Service** with three layers so it does not go inactive:
 
-- **Health Check Path:** `/health`
-- **Start command:** `cd telegram-worker && python -u listener.py`
+1. **Instant `/health` on `PORT`** — deploy passes port scan immediately  
+2. **Self keepalive every 4 min** — worker pings its own public URL (`RENDER_EXTERNAL_URL` + `/health`)  
+3. **Vercel Cron every 5 min** — `GET /api/cron/worker-ping` on your Vercel app pings the worker from outside  
 
-**Background Worker (alternative):** No HTTP port needed. Same start command; Render does not set `PORT`.
+#### Render Web Service settings
 
-If you previously saw `No open ports detected` → `Timed Out`, **pull the latest code and redeploy** — the health server fix is required for Web Service.
+| Setting | Value |
+|--------|--------|
+| **Start command** | `cd telegram-worker && python -u listener.py` |
+| **Health Check Path** | `/health` |
+| **PYTHON_VERSION** | `3.11.9` |
+| **KEEPALIVE_INTERVAL_SEC** | `240` (optional) |
 
-Optional: switch to **Background Worker** in Render if you prefer (no public URL, often cheaper).
+Render auto-sets `RENDER_EXTERNAL_URL` (e.g. `https://placemint-telegram-worker.onrender.com`). No need to copy it unless you use Vercel cron (below).
+
+#### Vercel env (second keepalive — recommended)
+
+Add on **Vercel**:
+
+- `TELEGRAM_WORKER_PUBLIC_URL` = your Render worker URL (no trailing slash), e.g. `https://placemint-telegram-worker.onrender.com`
+- `CRON_SECRET` or reuse `TELEGRAM_WORKER_SECRET` (cron auth)
+
+`vercel.json` already schedules `/api/cron/worker-ping` every **5 minutes**.
+
+Manual test: open `https://<render-worker>/health` — should return `"ok": true` and `"mode": "web"`.
+
+#### Verify logs after deploy
+
+```
+Health server listening on 0.0.0.0:XXXX (Render Web Service)
+Keepalive every 240s → https://....onrender.com, http://127.0.0.1:XXXX
+Web Service mode: HTTP + Telegram + keepalive in parallel
+```
+
+**Background Worker** is still supported (no `PORT`, no HTTP) if you switch later.
 
 ### Python version (important)
 
