@@ -129,7 +129,7 @@ export function TelegramConnectCard() {
 
   const apiReady = status?.apiConfigured !== false;
 
-  if (status.connected) {
+  if (status?.connected) {
     return (
       <Card className="glass border-emerald-500/20">
         <CardHeader>
