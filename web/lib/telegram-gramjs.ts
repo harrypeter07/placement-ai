@@ -18,6 +18,19 @@ export function normalizePhone(phone: string) {
   return p;
 }
 
+function is2faError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  const code =
+    err && typeof err === "object" && "errorMessage" in err
+      ? String((err as { errorMessage?: string }).errorMessage)
+      : "";
+  return (
+    msg.includes("SESSION_PASSWORD_NEEDED") ||
+    msg.includes("2FA") ||
+    code.includes("SESSION_PASSWORD_NEEDED")
+  );
+}
+
 export async function createTelegramClient(sessionString = "") {
   const { apiId, apiHash } = getTelegramApiCredentials();
   const client = new TelegramClient(new StringSession(sessionString), apiId, apiHash, {
@@ -47,21 +60,18 @@ export async function completeTelegramLogin(
   code: string,
   password?: string
 ) {
-  const { apiId, apiHash } = getTelegramApiCredentials();
   const client = await createTelegramClient("");
   try {
     try {
-      await client.signInUser(
-        { apiId, apiHash },
-        {
+      await client.invoke(
+        new Api.auth.SignIn({
           phoneNumber,
-          phoneCode: async () => code.trim(),
           phoneCodeHash,
-        }
+          phoneCode: code.trim(),
+        })
       );
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (!msg.includes("SESSION_PASSWORD_NEEDED") && !msg.includes("2FA")) {
+      if (!is2faError(err)) {
         throw err;
       }
       if (!password?.trim()) {
