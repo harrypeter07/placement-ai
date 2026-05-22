@@ -3,11 +3,17 @@ import type { IStudentPreferences } from "@/models/StudentPreferences";
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
+export type ReminderStyle = "gentle" | "balanced" | "aggressive";
+
 export type ReminderAnalysisResult = {
   isPlacement: boolean;
   urgency: "low" | "medium" | "high" | "critical";
   shouldRemind: boolean;
   suggestedOffsetsMinutes: number[];
+  /** Human labels e.g. "6 hours before" */
+  suggestedNotifications: string[];
+  reminderStyle: ReminderStyle;
+  aiSummary: string;
   notificationTitle: string;
   notificationMessage: string;
   confidence: number;
@@ -18,10 +24,26 @@ const FALLBACK: ReminderAnalysisResult = {
   urgency: "medium",
   shouldRemind: true,
   suggestedOffsetsMinutes: [24 * 60, 6 * 60, 60],
+  suggestedNotifications: ["1 day before", "6 hours before", "1 hour before"],
+  reminderStyle: "balanced",
+  aiSummary: "You have an upcoming application deadline.",
   notificationTitle: "Placement deadline",
   notificationMessage: "You have an upcoming application deadline.",
   confidence: 0.4,
 };
+
+function minutesToLabel(m: number): string {
+  if (m >= 24 * 60) return `${Math.round(m / (24 * 60))} day${m >= 48 * 60 ? "s" : ""} before`;
+  if (m >= 60) return `${Math.round(m / 60)} hour${m >= 120 ? "s" : ""} before`;
+  return `${m} mins before`;
+}
+
+function urgencyToStyle(u: ReminderAnalysisResult["urgency"]): ReminderStyle {
+  if (u === "critical") return "aggressive";
+  if (u === "high") return "aggressive";
+  if (u === "low") return "gentle";
+  return "balanced";
+}
 
 function clampMinutes(arr: unknown): number[] {
   if (!Array.isArray(arr)) return FALLBACK.suggestedOffsetsMinutes;
@@ -45,11 +67,16 @@ export async function analyzePlacementForReminders(
 
   if (!process.env.GEMINI_API_KEY) {
     const urgent = /tonight|today|hours?|closing|last date|eod|11:59|23:59/i.test(message);
+    const offsets = urgent ? [6 * 60, 60, 30, 15] : FALLBACK.suggestedOffsetsMinutes;
+    const urgency = urgent ? "critical" : "medium";
     return {
       ...FALLBACK,
       isPlacement: true,
-      urgency: urgent ? "high" : "medium",
-      suggestedOffsetsMinutes: urgent ? [6 * 60, 60, 30, 15] : FALLBACK.suggestedOffsetsMinutes,
+      urgency,
+      suggestedOffsetsMinutes: offsets,
+      suggestedNotifications: offsets.map(minutesToLabel),
+      reminderStyle: urgencyToStyle(urgency),
+      aiSummary: message.slice(0, 200),
       notificationTitle: urgent ? "Urgent placement deadline" : FALLBACK.notificationTitle,
       notificationMessage: message.slice(0, 280),
       confidence: 0.55,
@@ -66,6 +93,9 @@ Return ONLY valid JSON (no markdown):
   "urgency": "low" | "medium" | "high" | "critical",
   "shouldRemind": boolean,
   "suggestedOffsetsMinutes": number[],
+  "suggestedNotifications": string[] (human labels like "6 hours before"),
+  "reminderStyle": "gentle" | "balanced" | "aggressive",
+  "aiSummary": string (max 200 chars),
   "notificationTitle": string (max 80 chars),
   "notificationMessage": string (max 400 chars),
   "confidence": number 0-1
@@ -87,11 +117,22 @@ ${message.slice(0, 6000)}`;
     const parsed = JSON.parse(text) as Record<string, unknown>;
     const confidence = Math.min(1, Math.max(0, Number(parsed.confidence) || 0.5));
 
+    const offsets = clampMinutes(parsed.suggestedOffsetsMinutes);
+    const urgency = normalizeUrgency(parsed.urgency);
+    const suggestedNotifications = Array.isArray(parsed.suggestedNotifications)
+      ? (parsed.suggestedNotifications as unknown[]).map((s) => String(s).slice(0, 40)).slice(0, 8)
+      : offsets.map(minutesToLabel);
+
     return {
       isPlacement: Boolean(parsed.isPlacement),
-      urgency: normalizeUrgency(parsed.urgency),
+      urgency,
       shouldRemind: Boolean(parsed.shouldRemind),
-      suggestedOffsetsMinutes: clampMinutes(parsed.suggestedOffsetsMinutes),
+      suggestedOffsetsMinutes: offsets,
+      suggestedNotifications,
+      reminderStyle: (["gentle", "balanced", "aggressive"].includes(String(parsed.reminderStyle))
+        ? parsed.reminderStyle
+        : urgencyToStyle(urgency)) as ReminderStyle,
+      aiSummary: String(parsed.aiSummary || parsed.notificationMessage || FALLBACK.aiSummary).slice(0, 200),
       notificationTitle: String(parsed.notificationTitle || FALLBACK.notificationTitle).slice(0, 80),
       notificationMessage: String(parsed.notificationMessage || FALLBACK.notificationMessage).slice(0, 400),
       confidence,

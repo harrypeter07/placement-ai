@@ -6,7 +6,8 @@ import { Deadline } from "@/models/Deadline";
 import { requireAuth } from "@/lib/api-auth";
 import { StudentPreferences } from "@/models/StudentPreferences";
 import { AiAutomationLog } from "@/models/AiAutomationLog";
-import type { ReminderOffsetPreset, ReminderPriority } from "@/models/Reminder";
+import type { ReminderOffsetPreset, ReminderPriority, EscalationLevel } from "@/models/Reminder";
+import { priorityToEscalation } from "@/lib/reminders/escalation";
 
 export const runtime = "nodejs";
 
@@ -117,6 +118,10 @@ export async function POST(req: Request) {
       const offsetPreset = (Object.entries(OFFSET_PRESET_MINUTES).find(([, v]) => v === minutes)?.[0] ||
         "custom") as ReminderOffsetPreset;
 
+      const escalationLevel = (priorityToEscalation(priority) ||
+        prefs?.reminders?.defaultEscalation ||
+        "normal") as EscalationLevel;
+
       const doc = await Reminder.create({
         userId: user.id,
         deadlineId: deadline._id,
@@ -131,6 +136,9 @@ export async function POST(req: Request) {
         enabled: true,
         aiSuggested: parsed.data.aiSuggested ?? false,
         sent: false,
+        escalationLevel,
+        escalationCount: 0,
+        reminderStyle: priority === "critical" || priority === "high" ? "aggressive" : "balanced",
       });
       created.push(doc);
     }

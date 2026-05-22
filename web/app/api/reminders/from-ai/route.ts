@@ -6,6 +6,8 @@ import { Reminder } from "@/models/Reminder";
 import { requireAuth } from "@/lib/api-auth";
 import { StudentPreferences } from "@/models/StudentPreferences";
 import { analyzePlacementForReminders } from "@/lib/ai/reminder-intelligence";
+import { priorityToEscalation } from "@/lib/reminders/escalation";
+import type { EscalationLevel, ReminderPriority } from "@/models/Reminder";
 import { AiAutomationLog } from "@/models/AiAutomationLog";
 
 export const runtime = "nodejs";
@@ -75,6 +77,14 @@ export async function POST(req: Request) {
         (k) => k !== "custom" && OFFSET_PRESET_MINUTES[k] === minutes
       ) || "custom") as "1d" | "6h" | "1h" | "15m" | "custom";
 
+      const priority = (
+        analysis.urgency === "critical"
+          ? "critical"
+          : analysis.urgency === "high"
+            ? "high"
+            : "medium"
+      ) as ReminderPriority;
+
       const doc = await Reminder.create({
         userId: user.id,
         deadlineId: deadline._id,
@@ -84,11 +94,15 @@ export async function POST(req: Request) {
         channels: parsed.data.channels,
         title: analysis.notificationTitle,
         message: analysis.notificationMessage,
-        priority: analysis.urgency === "critical" ? "critical" : analysis.urgency === "high" ? "high" : "medium",
+        aiSummary: analysis.aiSummary,
+        priority,
         status: "active",
         enabled: true,
         aiSuggested: true,
         sent: false,
+        escalationLevel: priorityToEscalation(priority) as EscalationLevel,
+        escalationCount: 0,
+        reminderStyle: analysis.reminderStyle,
       });
       created.push(doc);
     }

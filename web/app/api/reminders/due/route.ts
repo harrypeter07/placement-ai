@@ -11,6 +11,7 @@ import {
   priorityToEscalation,
 } from "@/lib/reminders/escalation";
 import { isQuietHoursNow } from "@/lib/reminders/quiet-hours";
+import { sendPushToUser } from "@/lib/firebase/send-push";
 
 export const runtime = "nodejs";
 
@@ -122,6 +123,12 @@ export async function POST(req: Request) {
           title: r.title || "Reminder escalated",
           body: r.message || "",
           escalationLevel: level,
+        });
+        await sendPushToUser(String(user.id), {
+          title: r.title || "PlaceMint reminder",
+          body: r.aiSummary || r.message || "",
+          url: "/dashboard/reminders",
+          level,
         });
       }
       return NextResponse.json({ ok: true });

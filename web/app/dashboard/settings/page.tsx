@@ -26,8 +26,23 @@ import { Loader2, Save, RotateCcw } from "lucide-react";
 type Prefs = {
   timezone: string;
   language: string;
-  reminders: { defaultOffsetsMinutes: number[]; sound: boolean };
-  notifications: { browser: boolean; email: boolean; telegram: boolean; inApp: boolean };
+  reminders: {
+    defaultOffsetsMinutes: number[];
+    sound: boolean;
+    vibration?: boolean;
+    defaultEscalation?: string;
+    smartAiMode?: boolean;
+  };
+  notifications: {
+    browser: boolean;
+    email: boolean;
+    telegram: boolean;
+    inApp: boolean;
+    push?: boolean;
+    quietHoursEnabled?: boolean;
+    quietHoursStart?: string;
+    quietHoursEnd?: string;
+  };
   calendar: { autoSync: boolean; autoCreateEvents: boolean; autoUpdateEvents: boolean };
   ai: { strictness: string; urgencySensitivity: string; spamSensitivity: string };
   placement: {
@@ -267,6 +282,70 @@ export default function SettingsPage() {
                     onCheckedChange={(v) => nest("reminders", { sound: v })}
                   />
                 </div>
+                <div className="flex items-center justify-between">
+                  <Label>Vibration (mobile)</Label>
+                  <Switch
+                    checked={prefs.reminders.vibration ?? true}
+                    onCheckedChange={(v) => nest("reminders", { vibration: v })}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label>Smart AI reminder mode</Label>
+                  <Switch
+                    checked={prefs.reminders.smartAiMode ?? true}
+                    onCheckedChange={(v) => nest("reminders", { smartAiMode: v })}
+                  />
+                </div>
+                <fieldset className="space-y-2 border-0 p-0">
+                  <Label>Default escalation level</Label>
+                  <Select
+                    value={prefs.reminders.defaultEscalation || "normal"}
+                    onValueChange={(v) => nest("reminders", { defaultEscalation: v })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="soft">Soft</SelectItem>
+                      <SelectItem value="normal">Normal</SelectItem>
+                      <SelectItem value="urgent">Urgent</SelectItem>
+                      <SelectItem value="critical">Critical</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </fieldset>
+              </CardContent>
+            </Card>
+            <Card className="glass">
+              <CardHeader>
+                <CardTitle>Quiet hours</CardTitle>
+                <CardDescription>Soft/normal reminders pause during these hours</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <Label>Enable quiet hours</Label>
+                  <Switch
+                    checked={prefs.notifications.quietHoursEnabled ?? false}
+                    onCheckedChange={(v) => nest("notifications", { quietHoursEnabled: v })}
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <fieldset className="space-y-2 border-0 p-0">
+                    <Label>Start (24h)</Label>
+                    <Input
+                      value={prefs.notifications.quietHoursStart || "22:00"}
+                      onChange={(e) => nest("notifications", { quietHoursStart: e.target.value })}
+                      placeholder="22:00"
+                    />
+                  </fieldset>
+                  <fieldset className="space-y-2 border-0 p-0">
+                    <Label>End (24h)</Label>
+                    <Input
+                      value={prefs.notifications.quietHoursEnd || "07:00"}
+                      onChange={(e) => nest("notifications", { quietHoursEnd: e.target.value })}
+                      placeholder="07:00"
+                    />
+                  </fieldset>
+                </div>
               </CardContent>
             </Card>
             <Card className="glass">
@@ -283,18 +362,37 @@ export default function SettingsPage() {
                     />
                   </div>
                 ))}
+                <div className="flex items-center justify-between">
+                  <Label>Push notifications (FCM)</Label>
+                  <Switch
+                    checked={prefs.notifications.push ?? true}
+                    onCheckedChange={(v) => nest("notifications", { push: v })}
+                  />
+                </div>
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
                   className="mt-2"
-                  onClick={() => {
-                    if (typeof window !== "undefined" && "Notification" in window) {
-                      Notification.requestPermission().then((p) => toast.message(`Notifications: ${p}`));
+                  onClick={async () => {
+                    if (typeof window === "undefined" || !("Notification" in window)) return;
+                    const p = await Notification.requestPermission();
+                    toast.message(`Notifications: ${p}`);
+                    if (p === "granted") {
+                      const { requestFcmToken } = await import("@/lib/firebase/messaging-client");
+                      const token = await requestFcmToken();
+                      if (token) {
+                        await fetch("/api/push/register", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ token, platform: "web" }),
+                        });
+                        toast.success("Push token registered");
+                      }
                     }
                   }}
                 >
-                  Request browser notification permission
+                  Enable browser + push notifications
                 </Button>
               </CardContent>
             </Card>

@@ -16,6 +16,9 @@ const patchSchema = z
       .object({
         defaultOffsetsMinutes: z.array(z.number().min(5).max(43200)).optional(),
         sound: z.boolean().optional(),
+        vibration: z.boolean().optional(),
+        defaultEscalation: z.enum(["soft", "normal", "urgent", "critical"]).optional(),
+        smartAiMode: z.boolean().optional(),
       })
       .optional(),
     notifications: z
@@ -24,6 +27,10 @@ const patchSchema = z
         email: z.boolean().optional(),
         telegram: z.boolean().optional(),
         inApp: z.boolean().optional(),
+        push: z.boolean().optional(),
+        quietHoursEnabled: z.boolean().optional(),
+        quietHoursStart: z.string().optional(),
+        quietHoursEnd: z.string().optional(),
       })
       .optional(),
     calendar: z

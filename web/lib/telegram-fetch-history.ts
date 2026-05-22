@@ -25,7 +25,8 @@ function messageToRow(msg: Api.Message): FetchedTelegramMessage | null {
     mediaLabel = "[Video]";
   } else if (msg.document) {
     mediaType = "document";
-    mediaLabel = msg.document?.fileName ? `[Document: ${msg.document.fileName}]` : "[Document]";
+    const docName = (msg.document as { fileName?: string }).fileName;
+    mediaLabel = docName ? `[Document: ${docName}]` : "[Document]";
   } else if (msg.sticker) {
     mediaType = "sticker";
     mediaLabel = "[Sticker]";
@@ -40,13 +41,11 @@ function messageToRow(msg: Api.Message): FetchedTelegramMessage | null {
   const displayText = text.trim() || mediaLabel;
   if (!displayText) return null;
 
-  const raw = msg.date;
+  const raw = msg.date as number | undefined;
   const date =
-    raw instanceof Date
-      ? raw
-      : typeof raw === "number"
-        ? new Date(raw > 1e12 ? raw : raw * 1000)
-        : new Date();
+    typeof raw === "number"
+      ? new Date(raw > 1e12 ? raw : raw * 1000)
+      : new Date();
 
   return {
     messageId: String(msg.id),

@@ -1,5 +1,5 @@
-import { redirect } from "next/navigation";
+import { ReminderHub } from "@/components/reminders/reminder-hub";
 
-export default function RemindersRedirectPage() {
-  redirect("/dashboard/deadlines?tab=reminders");
+export default function RemindersPage() {
+  return <ReminderHub />;
 }
