@@ -148,7 +148,7 @@ export async function POST(req: Request) {
     const analysis = await analyzeChatMessagesForInsights(withMessages, prefs);
 
     if (mode === "preview" || mode === "none") {
-      const drafts = await storeDraftInsights(user.id, analysis.insights, targetGroupId);
+      await storeDraftInsights(user.id, analysis.insights, targetGroupId);
       const filter: { userId: string; groupId?: string } = { userId: user.id };
       if (targetGroupId) filter.groupId = targetGroupId;
       const stored = await PlacementInsight.find({

@@ -23,7 +23,7 @@ export async function GET(req: Request) {
     const gramjs = doc?.sessionString?.trim();
     const sessionString = telethon || gramjs;
 
-    if (!sessionString) {
+    if (!doc || !sessionString) {
       return NextResponse.json(
         { error: "No Telegram session — connect in Settings → Telegram" },
         { status: 404 }

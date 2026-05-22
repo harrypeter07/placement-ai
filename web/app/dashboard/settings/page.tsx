@@ -54,6 +54,9 @@ type Prefs = {
   automation: Record<string, boolean>;
   telegram?: {
     insightMessageCount: number;
+    insightSinceDate?: string | Date | null;
+    insightsApplyMode?: "preview" | "all" | "none";
+    insightPinToOverview?: boolean;
     monitoredGroupIds: string[];
     autoInsights: boolean;
     autoCreateDeadlines: boolean;

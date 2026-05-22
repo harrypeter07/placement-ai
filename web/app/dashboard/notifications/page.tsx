@@ -465,12 +465,12 @@ export default function NotificationsPage() {
                 processingNotes={insightNotes}
                 applying={applyingInsights}
                 onApplyAll={({ pinToOverview }) =>
-                  void applyInsightIds(
+                  applyInsightIds(
                     insights.filter((i) => i.status === "draft").map((i) => i._id),
                     pinToOverview
                   )
                 }
-                onApplySelected={(ids, { pinToOverview }) => void applyInsightIds(ids, pinToOverview)}
+                onApplySelected={(ids, { pinToOverview }) => applyInsightIds(ids, pinToOverview)}
               />
             )}
           </div>

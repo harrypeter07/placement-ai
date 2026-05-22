@@ -93,11 +93,12 @@ export async function applySingleInsight(
     "extractedDeadline" in item && item.extractedDeadline
       ? item.extractedDeadline
       : null;
-  const offsets =
-    ("suggestedReminderOffsetsMinutes" in item &&
-      item.suggestedReminderOffsetsMinutes?.length) ||
-    prefs?.reminders?.defaultOffsetsMinutes ||
-    [24 * 60, 6 * 60, 60, 15];
+  const offsets: number[] =
+    "suggestedReminderOffsetsMinutes" in item && item.suggestedReminderOffsetsMinutes?.length
+      ? item.suggestedReminderOffsetsMinutes
+      : prefs?.reminders?.defaultOffsetsMinutes?.length
+        ? prefs.reminders.defaultOffsetsMinutes
+        : [24 * 60, 6 * 60, 60, 15];
 
   let deadlineId: string | undefined;
   let deadlineCreated = false;
