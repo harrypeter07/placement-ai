@@ -8,7 +8,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { LoadingButton } from "@/components/ui/loading-button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
+import { TELEGRAM_COUNTRY_OPTIONS } from "@/lib/telegram-phone";
 
 interface AuthStatus {
   connected: boolean;
@@ -21,17 +29,25 @@ interface AuthStatus {
 
 type Step = "idle" | "code" | "2fa";
 
+const DEFAULT_COUNTRY = "IN";
+const RESEND_COOLDOWN_DEFAULT = 45;
+
 export function TelegramConnectCard() {
   const [status, setStatus] = useState<AuthStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [step, setStep] = useState<Step>("idle");
-  const [phone, setPhone] = useState("");
+  const [countryCode, setCountryCode] = useState(DEFAULT_COUNTRY);
+  const [localPhone, setLocalPhone] = useState("");
+  const [sentPhone, setSentPhone] = useState("");
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
   const [sendingCode, setSendingCode] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [needs2fa, setNeeds2fa] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  const country = TELEGRAM_COUNTRY_OPTIONS.find((c) => c.code === countryCode) ?? TELEGRAM_COUNTRY_OPTIONS[0];
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -48,17 +64,45 @@ export function TelegramConnectCard() {
     void load();
   }, [load]);
 
-  async function sendCode() {
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const t = setInterval(() => setResendCooldown((s) => Math.max(0, s - 1)), 1000);
+    return () => clearInterval(t);
+  }, [resendCooldown]);
+
+  function startCooldown(sec: number) {
+    setResendCooldown(sec);
+  }
+
+  async function requestCode(resend = false) {
+    if (!localPhone.trim() && !resend) {
+      toast.error("Enter your phone number");
+      return;
+    }
     setSendingCode(true);
     try {
+      const countryOpt = TELEGRAM_COUNTRY_OPTIONS.find((c) => c.code === countryCode)!;
       const res = await fetch("/api/telegram/auth/send-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone }),
+        body: JSON.stringify({
+          countryDial: countryOpt.dial,
+          localNumber: localPhone.trim(),
+          resend,
+        }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to send code");
+      if (!res.ok) {
+        if (res.status === 429 && data.retryAfterSec) {
+          startCooldown(data.retryAfterSec);
+        }
+        throw new Error(data.error || "Failed to send code");
+      }
+      setSentPhone(data.phoneNumber || "");
       setStep("code");
+      setCode("");
+      setNeeds2fa(false);
+      startCooldown(data.retryAfterSec ?? RESEND_COOLDOWN_DEFAULT);
       toast.success(data.message || "Code sent");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not send code");
@@ -68,13 +112,18 @@ export function TelegramConnectCard() {
   }
 
   async function verifyCode() {
+    const digits = code.replace(/\D/g, "");
+    if (digits.length < 4) {
+      toast.error("Enter the full code from Telegram or SMS");
+      return;
+    }
     setVerifying(true);
     try {
       const res = await fetch("/api/telegram/auth/verify-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          code,
+          code: digits,
           ...(password ? { password } : {}),
         }),
       });
@@ -84,6 +133,11 @@ export function TelegramConnectCard() {
           setNeeds2fa(true);
           setStep("2fa");
           toast.message("Enter your Telegram 2FA password");
+          return;
+        }
+        if (data.expired) {
+          toast.error(data.error || "Code expired — resend a new code");
+          setCode("");
           return;
         }
         throw new Error(data.error || "Verification failed");
@@ -173,7 +227,7 @@ export function TelegramConnectCard() {
           Connect Telegram
         </CardTitle>
         <CardDescription>
-          Log in with your phone and OTP here — the worker on Render cannot ask for codes in the terminal.
+          Phone + OTP login. Use the same Telegram account that is in your placement groups.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -184,36 +238,59 @@ export function TelegramConnectCard() {
               <p className="font-medium">Server env missing</p>
               <p className="text-xs mt-1 text-amber-100/80">
                 Add <code className="bg-muted px-1 rounded">TELEGRAM_API_ID</code> and{" "}
-                <code className="bg-muted px-1 rounded">TELEGRAM_API_HASH</code> to{" "}
-                <strong>Vercel → Environment Variables</strong> (from{" "}
-                <a href="https://my.telegram.org" className="underline" target="_blank" rel="noreferrer">
-                  my.telegram.org
-                </a>
-                ), redeploy, then use the button below.
+                <code className="bg-muted px-1 rounded">TELEGRAM_API_HASH</code> on Vercel, then redeploy.
               </p>
             </div>
           </div>
         )}
+
         {step === "idle" && (
           <>
-            <div className="space-y-2">
-              <Label htmlFor="tg-phone">Phone number</Label>
-              <Input
-                id="tg-phone"
-                placeholder="+919876543210"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                disabled={!apiReady}
-              />
-              <p className="text-xs text-muted-foreground">Include country code. Use the number of the Telegram account in your placement groups.</p>
+            <div className="grid sm:grid-cols-[140px_1fr] gap-3">
+              <div className="space-y-2">
+                <Label>Country</Label>
+                <Select value={countryCode} onValueChange={setCountryCode} disabled={!apiReady}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {TELEGRAM_COUNTRY_OPTIONS.map((c) => (
+                      <SelectItem key={c.code} value={c.code}>
+                        {c.label} (+{c.dial})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="tg-phone-local">Phone number</Label>
+                <div className="flex gap-2">
+                  <span className="inline-flex items-center px-3 rounded-md border border-input bg-muted/50 text-sm shrink-0">
+                    +{country.dial}
+                  </span>
+                  <Input
+                    id="tg-phone-local"
+                    inputMode="numeric"
+                    placeholder="9322909257"
+                    value={localPhone}
+                    onChange={(e) => setLocalPhone(e.target.value.replace(/[^\d\s]/g, ""))}
+                    disabled={!apiReady}
+                    className="flex-1"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Full number: +{country.dial}
+                  {localPhone.replace(/\D/g, "").replace(/^0+/, "") || "…"}
+                </p>
+              </div>
             </div>
             <LoadingButton
               variant="glow"
               size="lg"
               className="w-full sm:w-auto"
               loading={sendingCode}
-              onClick={() => void sendCode()}
-              disabled={!apiReady || !phone.trim()}
+              onClick={() => void requestCode(false)}
+              disabled={!apiReady || localPhone.replace(/\D/g, "").length < 6}
             >
               Send login code
             </LoadingButton>
@@ -222,14 +299,22 @@ export function TelegramConnectCard() {
 
         {(step === "code" || step === "2fa") && (
           <>
+            {sentPhone && (
+              <p className="text-sm text-muted-foreground">
+                Code sent to <strong className="text-foreground">{sentPhone}</strong>
+                {step === "code" && " — enter it right away (codes expire if you wait too long)."}
+              </p>
+            )}
             <div className="space-y-2">
               <Label htmlFor="tg-code">Login code</Label>
               <Input
                 id="tg-code"
                 placeholder="12345"
                 value={code}
-                onChange={(e) => setCode(e.target.value)}
+                onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                inputMode="numeric"
                 autoComplete="one-time-code"
+                autoFocus
               />
             </div>
             {(needs2fa || step === "2fa") && (
@@ -241,15 +326,37 @@ export function TelegramConnectCard() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Telegram 2FA password"
+                  autoComplete="current-password"
                 />
               </div>
             )}
-            <div className="flex gap-2 flex-wrap">
-              <LoadingButton variant="glow" loading={verifying} onClick={() => void verifyCode()} disabled={!code.trim()}>
+            <div className="flex flex-wrap gap-2 items-center">
+              <LoadingButton
+                variant="glow"
+                loading={verifying}
+                onClick={() => void verifyCode()}
+                disabled={code.replace(/\D/g, "").length < 4}
+              >
                 Verify & connect
               </LoadingButton>
-              <Button variant="ghost" size="sm" onClick={() => { setStep("idle"); setCode(""); setNeeds2fa(false); }}>
-                Back
+              <LoadingButton
+                variant="outline"
+                loading={sendingCode}
+                disabled={resendCooldown > 0 || !apiReady}
+                onClick={() => void requestCode(true)}
+              >
+                {resendCooldown > 0 ? `Resend (${resendCooldown}s)` : "Resend code"}
+              </LoadingButton>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setStep("idle");
+                  setCode("");
+                  setNeeds2fa(false);
+                }}
+              >
+                Change number
               </Button>
             </div>
           </>

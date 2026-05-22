@@ -4,14 +4,14 @@ import { connectDB } from "@/lib/mongodb";
 import { requireAuth } from "@/lib/api-auth";
 import { TelegramAuthPending } from "@/models/TelegramAuthPending";
 import { TelegramWorkerSession } from "@/models/TelegramWorkerSession";
-import { completeTelegramLogin } from "@/lib/telegram-gramjs";
+import { completeTelegramLogin, sanitizeOtpCode } from "@/lib/telegram-gramjs";
 import mongoose from "mongoose";
 
 export const runtime = "nodejs";
 
 const schema = z.object({
-  code: z.string().min(4).max(10),
-  password: z.string().optional(),
+  code: z.string().min(4).max(12),
+  password: z.string().max(256).optional(),
 });
 
 export async function POST(req: Request) {
@@ -20,51 +20,98 @@ export async function POST(req: Request) {
     const body = await req.json();
     const parsed = schema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ error: "Invalid code" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid code format" }, { status: 400 });
+    }
+
+    const otp = sanitizeOtpCode(parsed.data.code);
+    if (otp.length < 4) {
+      return NextResponse.json({ error: "Enter the full login code" }, { status: 400 });
     }
 
     await connectDB();
     const pending = await TelegramAuthPending.findOne({
       userId: new mongoose.Types.ObjectId(user.id),
-    });
-    if (!pending || pending.expiresAt < new Date()) {
-      return NextResponse.json({ error: "Code expired — send a new code" }, { status: 400 });
+    }).select("+authSessionString");
+
+    if (!pending) {
+      return NextResponse.json(
+        { error: "No active login — send a code first", errorCode: "NO_PENDING" },
+        { status: 400 }
+      );
+    }
+    if (pending.expiresAt < new Date()) {
+      await TelegramAuthPending.deleteOne({ _id: pending._id });
+      return NextResponse.json(
+        {
+          error: "Login session expired — tap Resend code",
+          errorCode: "PHONE_CODE_EXPIRED",
+          expired: true,
+        },
+        { status: 400 }
+      );
+    }
+    if (!pending.authSessionString) {
+      return NextResponse.json(
+        { error: "Login session invalid — resend code", errorCode: "SESSION_MISSING", expired: true },
+        { status: 400 }
+      );
     }
 
-    const login = await completeTelegramLogin(
-      pending.phoneNumber,
-      pending.phoneCodeHash,
-      parsed.data.code,
-      parsed.data.password
-    );
+    try {
+      const login = await completeTelegramLogin(
+        pending.phoneNumber,
+        pending.phoneCodeHash,
+        pending.authSessionString,
+        otp,
+        parsed.data.password
+      );
 
-    await TelegramWorkerSession.findOneAndUpdate(
-      { key: "default" },
-      {
-        sessionString: login.sessionString,
-        phoneNumber: login.phoneNumber,
-        telegramUserId: login.telegramUserId,
-        telegramUsername: login.telegramUsername,
+      await TelegramWorkerSession.findOneAndUpdate(
+        { key: "default" },
+        {
+          sessionString: login.sessionString,
+          phoneNumber: login.phoneNumber,
+          telegramUserId: login.telegramUserId,
+          telegramUsername: login.telegramUsername,
+          displayName: login.displayName,
+          linkedByUserId: new mongoose.Types.ObjectId(user.id),
+          connectedAt: new Date(),
+        },
+        { upsert: true, new: true }
+      );
+
+      await TelegramAuthPending.deleteOne({ userId: pending.userId });
+
+      return NextResponse.json({
+        ok: true,
         displayName: login.displayName,
-        linkedByUserId: new mongoose.Types.ObjectId(user.id),
-        connectedAt: new Date(),
-      },
-      { upsert: true, new: true }
-    );
+        telegramUsername: login.telegramUsername,
+      });
+    } catch (loginErr: unknown) {
+      const err = loginErr as Error & {
+        needs2fa?: boolean;
+        errorCode?: string;
+        expired?: boolean;
+        invalidCode?: boolean;
+      };
 
-    await TelegramAuthPending.deleteOne({ userId: pending.userId });
+      if (err.expired || err.errorCode === "PHONE_CODE_EXPIRED") {
+        await TelegramAuthPending.deleteOne({ userId: pending.userId });
+      }
 
-    return NextResponse.json({
-      ok: true,
-      displayName: login.displayName,
-      telegramUsername: login.telegramUsername,
-    });
+      return NextResponse.json(
+        {
+          error: err.message || "Verification failed",
+          needs2fa: !!err.needs2fa,
+          errorCode: err.errorCode,
+          expired: !!err.expired,
+          invalidCode: !!err.invalidCode,
+        },
+        { status: 400 }
+      );
+    }
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Error";
-    const needs2fa = msg.includes("Two-factor") || msg.includes("PASSWORD");
-    return NextResponse.json(
-      { error: msg, needs2fa },
-      { status: needs2fa ? 400 : msg === "Unauthorized" ? 401 : 500 }
-    );
+    return NextResponse.json({ error: msg }, { status: msg === "Unauthorized" ? 401 : 500 });
   }
 }
