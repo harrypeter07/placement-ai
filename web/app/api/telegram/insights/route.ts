@@ -7,24 +7,37 @@ import { PlacementInsight } from "@/models/PlacementInsight";
 import { StudentPreferences } from "@/models/StudentPreferences";
 import { requireAuth } from "@/lib/api-auth";
 import { analyzeChatMessagesForInsights } from "@/lib/ai/chat-insights";
-import { applyChatInsightsForUser } from "@/lib/ai/apply-chat-insights";
+import {
+  applyChatInsightsForUser,
+  storeDraftInsights,
+} from "@/lib/ai/apply-chat-insights";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 const postSchema = z.object({
   groupId: z.string().optional(),
+  messageLimit: z.number().min(5).max(100).optional(),
+  sinceDate: z.string().optional(),
+  applyMode: z.enum(["preview", "all", "none"]).optional(),
+  pinToOverview: z.boolean().optional(),
 });
 
-/** GET — stored insights (?groupId= optional filter) */
+/** GET — stored insights (?groupId= & ?overview=pinned) */
 export async function GET(req: Request) {
   try {
     const user = await requireAuth();
-    const groupId = new URL(req.url).searchParams.get("groupId");
+    const { searchParams } = new URL(req.url);
+    const groupId = searchParams.get("groupId");
+    const overview = searchParams.get("overview") === "pinned";
     await connectDB();
-    const filter: { userId: string; groupId?: string } = { userId: user.id };
+    const filter: Record<string, unknown> = { userId: user.id };
     if (groupId) filter.groupId = groupId;
-    const rows = await PlacementInsight.find(filter).sort({ rank: 1, createdAt: -1 }).limit(30).lean();
+    if (overview) {
+      filter.pinnedToOverview = true;
+      filter.status = "applied";
+    }
+    const rows = await PlacementInsight.find(filter).sort({ rank: 1, createdAt: -1 }).limit(50).lean();
     return NextResponse.json(rows);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Error";
@@ -32,7 +45,7 @@ export async function GET(req: Request) {
   }
 }
 
-/** POST — Gemini on monitored groups or one groupId */
+/** POST — analyze chats; preview stores draft insights, all auto-applies */
 export async function POST(req: Request) {
   try {
     const user = await requireAuth();
@@ -44,6 +57,11 @@ export async function POST(req: Request) {
     }
     const parsed = postSchema.safeParse(body);
     const targetGroupId = parsed.success ? parsed.data.groupId : undefined;
+    const messageLimit = parsed.success ? parsed.data.messageLimit : undefined;
+    const sinceDate = parsed.success ? parsed.data.sinceDate : undefined;
+    const applyMode =
+      (parsed.success && parsed.data.applyMode) ||
+      (undefined as "preview" | "all" | "none" | undefined);
 
     await connectDB();
 
@@ -53,21 +71,31 @@ export async function POST(req: Request) {
       prefs = await StudentPreferences.create({ userId: user.id, ...getDefaultStudentPreferences() });
     }
 
+    const defaultApply = prefs.telegram?.insightsApplyMode || "preview";
+    const mode = applyMode || defaultApply;
+
     let monitored = prefs.telegram?.monitoredGroupIds || [];
-    if (targetGroupId) {
-      monitored = [targetGroupId];
-    }
+    if (targetGroupId) monitored = [targetGroupId];
     if (monitored.length === 0) {
       return NextResponse.json({
         insights: [],
+        proposed: [],
         processingNotes: targetGroupId
           ? "Group not found for analysis."
-          : "Turn Monitor ON for groups you want AI to watch (toggle on the left), or open a chat and tap Analyze this group.",
+          : "Turn Monitor ON for groups, or open a chat and tap Analyze this group.",
         created: { deadlines: 0, reminders: 0, insights: 0 },
       });
     }
 
-    const limit = Math.min(100, Math.max(5, prefs.telegram?.insightMessageCount ?? 25));
+    const limit = Math.min(
+      100,
+      Math.max(5, messageLimit ?? prefs.telegram?.insightMessageCount ?? 25)
+    );
+    const since = sinceDate
+      ? new Date(sinceDate)
+      : prefs.telegram?.insightSinceDate
+        ? new Date(prefs.telegram.insightSinceDate)
+        : null;
 
     const groups = await TelegramGroup.find({ groupId: { $in: monitored } }).lean();
     const payload: {
@@ -77,15 +105,18 @@ export async function POST(req: Request) {
     }[] = [];
 
     for (const g of groups) {
-      const msgs = await TelegramMessage.find({ groupId: g.groupId })
-        .sort({ sentAt: -1 })
-        .limit(limit)
-        .lean();
+      const msgFilter: Record<string, unknown> = { groupId: g.groupId };
+      if (since && !Number.isNaN(since.getTime())) {
+        msgFilter.sentAt = { $gte: since };
+      }
+      const msgs = await TelegramMessage.find(msgFilter).sort({ sentAt: -1 }).limit(limit).lean();
       if (msgs.length === 0 && targetGroupId) {
         return NextResponse.json({
           insights: [],
-          processingNotes: `No messages stored for "${g.title}". Tap Load messages first, then Analyze.`,
+          proposed: [],
+          processingNotes: `No messages for "${g.title}" in this range. Load messages first or widen date/limit.`,
           created: { deadlines: 0, reminders: 0, insights: 0 },
+          analyzedMessageCount: 0,
         });
       }
       payload.push({
@@ -103,31 +134,63 @@ export async function POST(req: Request) {
     }
 
     const withMessages = payload.filter((p) => p.messages.length > 0);
+    const analyzedMessageCount = withMessages.reduce((n, p) => n + p.messages.length, 0);
     if (withMessages.length === 0) {
       return NextResponse.json({
         insights: [],
-        processingNotes: "No messages to analyze. Load messages for a group, then run analysis.",
+        proposed: [],
+        processingNotes: "No messages to analyze. Load messages, adjust limit, or pick an earlier since date.",
         created: { deadlines: 0, reminders: 0, insights: 0 },
+        analyzedMessageCount: 0,
       });
     }
 
     const analysis = await analyzeChatMessagesForInsights(withMessages, prefs);
+
+    if (mode === "preview" || mode === "none") {
+      const drafts = await storeDraftInsights(user.id, analysis.insights, targetGroupId);
+      const filter: { userId: string; groupId?: string } = { userId: user.id };
+      if (targetGroupId) filter.groupId = targetGroupId;
+      const stored = await PlacementInsight.find({
+        ...filter,
+        status: "draft",
+      })
+        .sort({ rank: 1 })
+        .limit(50)
+        .lean();
+
+      return NextResponse.json({
+        ...analysis,
+        insights: stored,
+        proposed: analysis.insights,
+        created: { deadlines: 0, reminders: 0, insights: stored.length },
+        analyzedMessageCount,
+        analyzedGroupId: targetGroupId,
+        applyMode: mode,
+      });
+    }
+
     const created = await applyChatInsightsForUser(
       user.id,
       analysis.insights,
       prefs,
-      targetGroupId
+      targetGroupId,
+      { pinToOverview: parsed.success ? parsed.data.pinToOverview : false }
     );
 
     const filter: { userId: string; groupId?: string } = { userId: user.id };
     if (targetGroupId) filter.groupId = targetGroupId;
-    const stored = await PlacementInsight.find(filter).sort({ rank: 1 }).limit(30).lean();
+    const stored = await PlacementInsight.find(filter).sort({ rank: 1 }).limit(50).lean();
 
     return NextResponse.json({
       ...analysis,
       created,
       insights: stored,
+      proposed: analysis.insights,
+      analyzedMessageCount,
       analyzedGroupId: targetGroupId,
+      applyMode: "all",
+      results: created.results,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Error";

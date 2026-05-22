@@ -70,6 +70,7 @@ export async function POST(req: Request) {
         { key: "default" },
         {
           sessionString: login.sessionString,
+          telethonSessionString: login.telethonSessionString || undefined,
           phoneNumber: login.phoneNumber,
           telegramUserId: login.telegramUserId,
           telegramUsername: login.telegramUsername,

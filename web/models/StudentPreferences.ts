@@ -48,6 +48,12 @@ export interface IStudentPreferences {
   telegram: {
     /** Last N messages per monitored group for Gemini */
     insightMessageCount: number;
+    /** Only analyze messages on or after this date (optional) */
+    insightSinceDate?: Date | null;
+    /** preview = show drafts first; all = auto-apply; none = insights only */
+    insightsApplyMode: "preview" | "all" | "none";
+    /** Pin applied insights on dashboard overview */
+    insightPinToOverview: boolean;
     /** groupId values with monitoring on */
     monitoredGroupIds: string[];
     autoInsights: boolean;
@@ -103,6 +109,9 @@ const defaults = {
   },
   telegram: {
     insightMessageCount: 25,
+    insightSinceDate: null as Date | null,
+    insightsApplyMode: "preview" as const,
+    insightPinToOverview: true,
     monitoredGroupIds: [] as string[],
     autoInsights: true,
     autoCreateDeadlines: true,
@@ -161,6 +170,13 @@ const StudentPreferencesSchema = new Schema<IStudentPreferences>(
     },
     telegram: {
       insightMessageCount: { type: Number, default: defaults.telegram.insightMessageCount, min: 5, max: 100 },
+      insightSinceDate: { type: Date, default: null },
+      insightsApplyMode: {
+        type: String,
+        enum: ["preview", "all", "none"],
+        default: defaults.telegram.insightsApplyMode,
+      },
+      insightPinToOverview: { type: Boolean, default: defaults.telegram.insightPinToOverview },
       monitoredGroupIds: { type: [String], default: defaults.telegram.monitoredGroupIds },
       autoInsights: { type: Boolean, default: defaults.telegram.autoInsights },
       autoCreateDeadlines: { type: Boolean, default: defaults.telegram.autoCreateDeadlines },

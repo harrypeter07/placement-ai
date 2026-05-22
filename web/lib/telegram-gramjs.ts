@@ -5,6 +5,7 @@ import { utils } from "telegram";
 import { computeCheck } from "telegram/Password";
 import { mapTelegramAuthError } from "@/lib/telegram-auth-errors";
 import { normalizePhone, sanitizeOtpCode } from "@/lib/telegram-phone";
+import { exportTelethonSessionString } from "@/lib/telegram-telethon-session";
 
 export function getTelegramApiCredentials() {
   const apiId = Number(process.env.TELEGRAM_API_ID || "0");
@@ -106,9 +107,11 @@ export async function completeTelegramLogin(
     if (!sessionString) {
       throw new Error("Login succeeded but session could not be saved");
     }
+    const telethonSessionString = exportTelethonSessionString(client) || undefined;
     const me = await client.getMe();
     return {
       sessionString,
+      telethonSessionString,
       phoneNumber: normalizePhone(phoneNumber),
       telegramUserId: me?.id ? String(me.id) : undefined,
       telegramUsername: me?.username ?? undefined,

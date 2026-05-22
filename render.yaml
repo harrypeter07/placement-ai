@@ -26,7 +26,7 @@ services:
     name: placemint-telegram-worker
     runtime: python
     buildCommand: pip install -r telegram-worker/requirements.txt
-    startCommand: cd telegram-worker && python -u listener.py
+    startCommand: cd telegram-worker && python3.11 -u listener.py
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9

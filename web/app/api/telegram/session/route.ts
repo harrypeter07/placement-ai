@@ -16,10 +16,14 @@ export async function GET(req: Request) {
 
     await connectDB();
     const doc = await TelegramWorkerSession.findOne({ key: "default" })
-      .select("+sessionString phoneNumber telegramUsername displayName connectedAt")
+      .select("+sessionString +telethonSessionString phoneNumber telegramUsername displayName connectedAt")
       .lean();
 
-    if (!doc?.sessionString) {
+    const telethon = doc?.telethonSessionString?.trim();
+    const gramjs = doc?.sessionString?.trim();
+    const sessionString = telethon || gramjs;
+
+    if (!sessionString) {
       return NextResponse.json(
         { error: "No Telegram session — connect in Settings → Telegram" },
         { status: 404 }
@@ -27,7 +31,9 @@ export async function GET(req: Request) {
     }
 
     return NextResponse.json({
-      sessionString: doc.sessionString,
+      sessionString,
+      telethonSessionString: telethon || undefined,
+      sessionFormat: telethon ? "telethon" : "gramjs",
       phoneNumber: doc.phoneNumber,
       telegramUsername: doc.telegramUsername,
       displayName: doc.displayName,

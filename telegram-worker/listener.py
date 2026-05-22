@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import struct
 from datetime import datetime, timezone
 
 import aiohttp
@@ -42,6 +43,23 @@ except RuntimeError:
 client: TelegramClient | None = None
 
 
+def is_valid_telethon_string_session(session_str: str) -> bool:
+    """Reject GramJS sessions (wrong unpack size) before Telethon loads them."""
+    s = (session_str or "").strip()
+    if not s or len(s) < 40:
+        return False
+    if not s.startswith("1"):
+        return False
+    try:
+        import base64
+
+        raw = base64.urlsafe_b64decode(s[1:] + "==")
+        struct.unpack(">B4sH256s", raw)
+        return True
+    except Exception:
+        return False
+
+
 async def fetch_session_string(verbose: bool = True) -> str:
     """Load Telethon StringSession from env or dashboard (saved via Settings OTP flow)."""
     env = os.getenv("TELEGRAM_SESSION_STRING", "").strip()
@@ -64,11 +82,22 @@ async def fetch_session_string(verbose: bool = True) -> str:
                 body = await resp.text()
                 if resp.status == 200:
                     data = json.loads(body) if body else {}
-                    s = (data.get("sessionString") or "").strip()
+                    telethon = (data.get("telethonSessionString") or "").strip()
+                    legacy = (data.get("sessionString") or "").strip()
+                    s = telethon if is_valid_telethon_string_session(telethon) else ""
+                    if not s and is_valid_telethon_string_session(legacy):
+                        s = legacy
                     if s:
                         if verbose:
-                            print("Loaded Telegram session from dashboard")
+                            fmt = data.get("sessionFormat") or ("telethon" if telethon else "legacy")
+                            print(f"Loaded Telegram session from dashboard ({fmt})")
                         return s
+                    if telethon or legacy:
+                        if verbose:
+                            print(
+                                "Dashboard session is GramJS-only — open Settings → Connect Telegram "
+                                "and sign in again once to sync the Render worker session"
+                            )
                 if resp.status == 404:
                     if verbose:
                         print(
@@ -95,12 +124,22 @@ async def try_connect_telegram() -> TelegramClient | None:
     global client
     session_str = await fetch_session_string()
     if session_str:
-        c = TelegramClient(StringSession(session_str), API_ID, API_HASH)
-        await c.connect()
-        if await c.is_user_authorized():
-            client = c
-            return c
-        print("WARNING: Dashboard session invalid — reconnect in Settings → Connect Telegram")
+        if not is_valid_telethon_string_session(session_str):
+            print(
+                "WARNING: Invalid Telethon session string — reconnect in Settings → Connect Telegram"
+            )
+            return None
+        try:
+            c = TelegramClient(StringSession(session_str), API_ID, API_HASH)
+            await c.connect()
+            if await c.is_user_authorized():
+                client = c
+                return c
+            print("WARNING: Dashboard session invalid — reconnect in Settings → Connect Telegram")
+        except struct.error as e:
+            print(f"WARNING: Could not load Telegram session ({e}) — reconnect in Settings")
+        except Exception as e:
+            print(f"WARNING: Telegram connect failed ({e})")
 
     session_path = get_session_path()
     if os.path.exists(f"{session_path}.session"):

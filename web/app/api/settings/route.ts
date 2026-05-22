@@ -67,6 +67,9 @@ const patchSchema = z
     telegram: z
       .object({
         insightMessageCount: z.number().min(5).max(100).optional(),
+        insightSinceDate: z.string().nullable().optional(),
+        insightsApplyMode: z.enum(["preview", "all", "none"]).optional(),
+        insightPinToOverview: z.boolean().optional(),
         monitoredGroupIds: z.array(z.string()).optional(),
         autoInsights: z.boolean().optional(),
         autoCreateDeadlines: z.boolean().optional(),
@@ -135,7 +138,14 @@ export async function PATCH(req: Request) {
     if (p.automation) Object.assign(doc.automation, p.automation);
     if (p.telegram) {
       if (!doc.telegram) doc.telegram = getDefaultStudentPreferences().telegram;
-      Object.assign(doc.telegram, p.telegram);
+      const tg = { ...p.telegram };
+      if (tg.insightSinceDate !== undefined) {
+        doc.telegram.insightSinceDate = tg.insightSinceDate
+          ? new Date(tg.insightSinceDate)
+          : null;
+        delete tg.insightSinceDate;
+      }
+      Object.assign(doc.telegram, tg);
       doc.markModified("telegram");
     }
     await doc.save();

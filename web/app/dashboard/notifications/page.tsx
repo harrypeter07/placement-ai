@@ -29,6 +29,10 @@ import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useDashboardCache } from "@/store/use-dashboard-cache";
 import { useCachedFetch } from "@/hooks/use-cached-fetch";
+import {
+  InsightsAnalysisPanel,
+  type InsightRow,
+} from "@/components/telegram/insights-analysis-panel";
 
 interface TelegramGroup {
   _id: string;
@@ -62,19 +66,7 @@ interface SystemNotif {
   createdAt: string;
 }
 
-interface PlacementInsight {
-  _id: string;
-  groupId: string;
-  groupTitle?: string;
-  rank: number;
-  title: string;
-  summary: string;
-  urgency: string;
-  category: string;
-  confidence: number;
-  deadlineId?: string;
-  reminderCount?: number;
-}
+type PlacementInsight = InsightRow;
 
 export default function NotificationsPage() {
   const cache = useDashboardCache();
@@ -91,6 +83,10 @@ export default function NotificationsPage() {
   const [analyzingGroup, setAnalyzingGroup] = useState(false);
   const [groupFilter, setGroupFilter] = useState<"all" | "monitored">("all");
   const [groupInsights, setGroupInsights] = useState<PlacementInsight[]>([]);
+  const [insightNotes, setInsightNotes] = useState("");
+  const [analyzedMsgCount, setAnalyzedMsgCount] = useState<number | undefined>();
+  const [applyingInsights, setApplyingInsights] = useState(false);
+  const [analyzeLimit, setAnalyzeLimit] = useState(25);
   const insightsRan = useRef(false);
 
   const {
@@ -159,44 +155,86 @@ export default function NotificationsPage() {
     return () => clearInterval(id);
   }, [selectedGroupId, loadMessages]);
 
-  const runInsights = useCallback(async (groupId?: string) => {
-    setRunningInsights(true);
-    if (groupId) setAnalyzingGroup(true);
-    try {
-      const res = await fetch("/api/telegram/insights", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(groupId ? { groupId } : {}),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Insights failed");
-      const list = Array.isArray(data.insights) ? data.insights : [];
-      setInsights(list);
-      cache.setInsights(list);
-      cache.invalidateDeadlines();
-      cache.invalidateReminders();
-      cache.invalidateCalendar();
-      const c = data.created;
-      toast.success(
-        `AI processed chats — ${list.length} insight(s), ${c?.deadlines ?? 0} deadline(s), ${c?.reminders ?? 0} reminder(s) auto-created`
-      );
-      if (data.processingNotes && !groupId) {
-        console.info("[insights]", data.processingNotes);
-      } else if (data.processingNotes && groupId) {
-        toast.message(data.processingNotes);
+  const applyInsightIds = useCallback(
+    async (ids: string[], pinToOverview: boolean) => {
+      setApplyingInsights(true);
+      try {
+        const res = await fetch("/api/telegram/insights/apply", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            insightIds: ids,
+            createDeadlines: true,
+            createReminders: true,
+            pinToOverview,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Apply failed");
+        toast.success(
+          `Applied ${data.applied} — ${data.created?.deadlines ?? 0} deadlines, ${data.created?.reminders ?? 0} reminders`
+        );
+        cache.invalidateDeadlines();
+        cache.invalidateReminders();
+        void refreshInsights();
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Apply failed");
+      } finally {
+        setApplyingInsights(false);
       }
-      if (groupId) {
-        const gRes = await fetch(`/api/telegram/insights?groupId=${encodeURIComponent(groupId)}`);
-        const gData = await gRes.json();
-        setGroupInsights(Array.isArray(gData) ? gData : []);
+    },
+    [cache, refreshInsights]
+  );
+
+  const runInsights = useCallback(
+    async (groupId?: string, applyMode: "preview" | "all" = "preview") => {
+      setRunningInsights(true);
+      if (groupId) setAnalyzingGroup(true);
+      try {
+        const res = await fetch("/api/telegram/insights", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            groupId,
+            messageLimit: analyzeLimit,
+            applyMode,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Insights failed");
+        const list = Array.isArray(data.insights) ? data.insights : [];
+        setInsights(list);
+        cache.setInsights(list);
+        setInsightNotes(data.processingNotes || "");
+        setAnalyzedMsgCount(data.analyzedMessageCount);
+
+        if (applyMode === "all") {
+          cache.invalidateDeadlines();
+          cache.invalidateReminders();
+          cache.invalidateCalendar();
+          const c = data.created;
+          toast.success(
+            `Applied ${list.length} insight(s) — ${c?.deadlines ?? 0} deadline(s), ${c?.reminders ?? 0} reminder(s)`
+          );
+        } else {
+          toast.success(
+            `${list.length} insight(s) ready — review titles, deadlines & reminder times below, then Apply`
+          );
+        }
+        if (data.processingNotes) toast.message(data.processingNotes);
+
+        if (groupId) {
+          setGroupInsights(list);
+        }
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Could not run insights");
+      } finally {
+        setRunningInsights(false);
+        setAnalyzingGroup(false);
       }
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Could not run insights");
-    } finally {
-      setRunningInsights(false);
-      setAnalyzingGroup(false);
-    }
-  }, [cache, setInsights]);
+    },
+    [cache, setInsights, analyzeLimit]
+  );
 
   const fetchMessagesFromTelegram = useCallback(
     async (groupId: string) => {
@@ -376,50 +414,63 @@ export default function NotificationsPage() {
         </div>
 
         {tab === "insights" ? (
-          <div className="space-y-3 max-w-3xl">
+          <div className="space-y-4 max-w-3xl">
             <p className="text-sm text-muted-foreground">
-              Gemini ranks placement updates from monitored groups, then auto-creates deadlines & reminders. Configure
-              message count in{" "}
+              See full AI output before applying. Set message count / date in{" "}
               <Link href="/dashboard/settings" className="text-primary underline">
-                Settings → Telegram AI
-              </Link>
-              . View results in{" "}
-              <Link href="/dashboard/deadlines" className="text-primary underline">
-                Placements
-              </Link>
-              .
+                Settings
+              </Link>{" "}
+              or{" "}
+              <Link href="/dashboard/insights" className="text-primary underline">
+                AI Insights
+              </Link>{" "}
+              screen.
             </p>
+            <Card className="glass">
+              <CardContent className="pt-4 flex flex-wrap gap-3 items-end">
+                <div className="space-y-1">
+                  <Label className="text-xs">Messages per group</Label>
+                  <Input
+                    type="number"
+                    className="h-8 w-24"
+                    min={5}
+                    max={100}
+                    value={analyzeLimit}
+                    onChange={(e) => setAnalyzeLimit(Number(e.target.value) || 25)}
+                  />
+                </div>
+                <LoadingButton
+                  variant="outline"
+                  size="sm"
+                  loading={runningInsights}
+                  onClick={() => void runInsights(undefined, "all")}
+                >
+                  Quick apply all (skip preview)
+                </LoadingButton>
+              </CardContent>
+            </Card>
             {loadingInsights && !(insights?.length) ? (
               <Skeleton className="h-48 rounded-xl" />
             ) : !insights?.length ? (
               <Card className="glass">
                 <CardContent className="py-12 text-center text-muted-foreground">
-                  No insights yet. Turn on monitoring for a group, then tap <strong>Run AI now</strong>.
+                  No insights yet. Turn on monitoring, load messages, then <strong>Run AI now</strong>.
                 </CardContent>
               </Card>
             ) : (
-              insights.map((ins) => (
-                <Card key={ins._id} className="glass border-primary/20">
-                  <CardContent className="p-4">
-                    <div className="flex justify-between gap-2 flex-wrap">
-                      <div>
-                        <span className="text-xs text-muted-foreground">#{ins.rank}</span>
-                        <h3 className="font-semibold">{ins.title}</h3>
-                        <p className="text-sm text-muted-foreground mt-1">{ins.summary}</p>
-                      </div>
-                      <div className="flex flex-col items-end gap-1">
-                        <Badge variant={ins.urgency === "critical" ? "critical" : "secondary"}>{ins.urgency}</Badge>
-                        <Badge variant="outline">{ins.category}</Badge>
-                      </div>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-2">
-                      {ins.groupTitle || ins.groupId}
-                      {ins.deadlineId ? " · deadline created" : ""}
-                      {(ins.reminderCount ?? 0) > 0 ? ` · ${ins.reminderCount} reminder(s)` : ""}
-                    </p>
-                  </CardContent>
-                </Card>
-              ))
+              <InsightsAnalysisPanel
+                insights={insights}
+                analyzedMessageCount={analyzedMsgCount}
+                processingNotes={insightNotes}
+                applying={applyingInsights}
+                onApplyAll={({ pinToOverview }) =>
+                  void applyInsightIds(
+                    insights.filter((i) => i.status === "draft").map((i) => i._id),
+                    pinToOverview
+                  )
+                }
+                onApplySelected={(ids, { pinToOverview }) => void applyInsightIds(ids, pinToOverview)}
+              />
             )}
           </div>
         ) : tab === "alerts" ? (
@@ -687,18 +738,49 @@ export default function NotificationsPage() {
                     )}
                   </ScrollArea>
                   {groupInsights.length > 0 && (
-                    <div className="p-3 border-t border-white/5 max-h-40 overflow-y-auto">
-                      <p className="text-xs font-semibold mb-2 flex items-center gap-1">
-                        <Sparkles className="h-3 w-3" /> Insights for this group
+                    <div className="p-3 border-t border-white/5 max-h-56 overflow-y-auto space-y-2">
+                      <p className="text-xs font-semibold flex items-center gap-1">
+                        <Sparkles className="h-3 w-3" /> {groupInsights.length} insight(s) for this group
                       </p>
-                      <div className="space-y-2">
-                        {groupInsights.slice(0, 3).map((ins) => (
-                          <div key={ins._id} className="text-xs rounded-lg bg-primary/10 p-2">
-                            <span className="font-medium">{ins.title}</span>
-                            <p className="text-muted-foreground line-clamp-2">{ins.summary}</p>
+                      {groupInsights.map((ins) => (
+                        <div key={ins._id} className="text-xs rounded-lg bg-primary/10 p-2 space-y-1">
+                          <div className="flex gap-1 flex-wrap">
+                            <Badge className="text-[8px] h-4">{ins.urgency}</Badge>
+                            {ins.status === "draft" && (
+                              <Badge variant="outline" className="text-[8px] h-4">
+                                draft
+                              </Badge>
+                            )}
                           </div>
-                        ))}
-                      </div>
+                          <span className="font-medium block">{ins.title}</span>
+                          <p className="text-muted-foreground">{ins.summary}</p>
+                          {ins.extractedDeadline?.company && (
+                            <p className="text-primary/90">
+                              Deadline: {ins.extractedDeadline.company} — {ins.extractedDeadline.role}
+                            </p>
+                          )}
+                          {(ins.suggestedReminderOffsetsMinutes?.length ?? 0) > 0 && (
+                            <p className="text-amber-400/90">
+                              Reminders:{" "}
+                              {ins.suggestedReminderOffsetsMinutes!
+                                .slice(0, 4)
+                                .map((m) =>
+                                  m >= 60 ? `${Math.round(m / 60)}h` : `${m}m`
+                                )
+                                .join(", ")}{" "}
+                              before
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                      <Button
+                        size="sm"
+                        variant="link"
+                        className="h-6 text-xs p-0"
+                        onClick={() => setTab("insights")}
+                      >
+                        Open full insights tab →
+                      </Button>
                     </div>
                   )}
                 </>
