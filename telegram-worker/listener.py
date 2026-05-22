@@ -5,6 +5,7 @@ import struct
 from datetime import datetime, timezone
 
 import aiohttp
+from aiohttp import web
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 from dotenv import load_dotenv
@@ -41,6 +42,7 @@ except RuntimeError:
     asyncio.set_event_loop(loop)
 
 client: TelegramClient | None = None
+_worker_status: dict[str, str | int] = {"telegram": "starting", "groups": 0}
 
 
 def is_valid_telethon_string_session(session_str: str) -> bool:
@@ -275,10 +277,11 @@ async def refresh_monitored_ids() -> set[int]:
             print(f"Monitored list fetch failed: {e}")
 
     monitored_ids = ids
+    _worker_status["groups"] = len(ids)
     if ids:
-        print(f"Monitoring {len(ids)} group(s) from dashboard: {sorted(ids)}")
+        print(f"Monitoring {len(ids)} group(s) from dashboard: {sorted(ids)}", flush=True)
     else:
-        print("No groups enabled for monitoring yet — users can toggle ON in Notifications")
+        print("No groups enabled for monitoring yet — users can toggle ON in Notifications", flush=True)
     return ids
 
 
@@ -440,24 +443,53 @@ async def on_new_message(event):
         print(f"  DB duplicate: {company}")
 
 
-async def main():
-    if not API_ID or not API_HASH:
-        print("ERROR: Set TELEGRAM_API_ID and TELEGRAM_API_HASH in telegram-worker/.env", flush=True)
-        return
-    print("placemint telegram-worker starting…", flush=True)
-    print(f"WEB_APP_URL={WEB_APP_URL}", flush=True)
-    print(f"WORKER_SECRET={'set' if WORKER_SECRET else 'MISSING'}")
-    print("Connecting to Telegram (waits until Settings → Connect Telegram is done)…")
+async def start_render_health_server() -> web.AppRunner | None:
+    """
+    Render Web Services require a bound PORT before deploy health checks pass.
+    Background Workers omit PORT — then we skip HTTP entirely.
+    """
+    port = int(os.getenv("PORT", "0") or "0")
+    if port <= 0:
+        print("No PORT set — Background Worker mode (no HTTP server)", flush=True)
+        return None
+
+    async def health(_request: web.Request) -> web.Response:
+        return web.json_response(
+            {
+                "ok": True,
+                "service": "placemint-telegram-worker",
+                "telegram": _worker_status.get("telegram"),
+                "monitoredGroups": _worker_status.get("groups", 0),
+            }
+        )
+
+    app = web.Application()
+    app.router.add_get("/", health)
+    app.router.add_get("/health", health)
+
+    runner = web.AppRunner(app)
+    await runner.setup()
+    await web.TCPSite(runner, "0.0.0.0", port).start()
+    print(f"Health server listening on 0.0.0.0:{port} (Render Web Service)", flush=True)
+    return runner
+
+
+async def run_telegram_worker() -> None:
+    """Telegram loop — runs in parallel when deployed as a Web Service."""
+    global client
+    _worker_status["telegram"] = "waiting_for_session"
+    print("Connecting to Telegram (waits until Settings → Connect Telegram is done)…", flush=True)
     await wait_for_telegram()
     assert client is not None
     client.add_event_handler(on_new_message, events.NewMessage())
     me = await client.get_me()
-    print(f"Logged in as {me.first_name} (@{me.username})")
-    print(f"WEB_APP_URL={WEB_APP_URL}")
-    print("Dynamic groups: catalog synced from Telegram; monitoring from dashboard toggles")
+    _worker_status["telegram"] = "connected"
+    print(f"Logged in as {me.first_name} (@{me.username})", flush=True)
+    print("Dynamic groups: catalog synced from Telegram; monitoring from dashboard toggles", flush=True)
 
     await discover_and_sync_all_groups()
     await refresh_monitored_ids()
+    _worker_status["groups"] = len(monitored_ids)
 
     for gid in monitored_ids:
         title = group_titles.get(gid)
@@ -470,11 +502,34 @@ async def main():
                 title = str(gid)
         await backfill_group_history(gid, title)
 
-    print("Waiting for new messages...\n")
+    print("Waiting for new messages...\n", flush=True)
 
     asyncio.create_task(heartbeat_loop())
     await send_heartbeat(groups=len(monitored_ids))
     await client.run_until_disconnected()
+
+
+async def main() -> None:
+    if not API_ID or not API_HASH:
+        print("ERROR: Set TELEGRAM_API_ID and TELEGRAM_API_HASH", flush=True)
+        return
+
+    print("placemint telegram-worker starting…", flush=True)
+    print(f"WEB_APP_URL={WEB_APP_URL}", flush=True)
+    print(f"WORKER_SECRET={'set' if WORKER_SECRET else 'MISSING'}", flush=True)
+
+    # Bind PORT first so Render Web Service deploy does not time out
+    http_runner = await start_render_health_server()
+
+    try:
+        if http_runner:
+            print("Telegram worker running in background (HTTP health on PORT)", flush=True)
+            await run_telegram_worker()
+        else:
+            await run_telegram_worker()
+    finally:
+        if http_runner:
+            await http_runner.cleanup()
 
 
 if __name__ == "__main__":

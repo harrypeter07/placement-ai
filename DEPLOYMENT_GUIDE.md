@@ -124,25 +124,18 @@ Also ensure on OAuth consent screen that app includes required scopes used by ap
 
 This repo already includes `render.yaml`.
 
-### CRITICAL: use a Background Worker, not a Web Service
+### Web Service OR Background Worker (both work now)
 
-If Render logs show:
+**Web Service (what you deployed):** `listener.py` starts a small HTTP server on Render’s `PORT` at `/health` immediately, then runs Telegram in the background. Set:
 
-`No open ports detected` → `Port scan timeout` → `Timed Out`
+- **Health Check Path:** `/health`
+- **Start command:** `cd telegram-worker && python -u listener.py`
 
-you created a **Web Service** by mistake. `listener.py` does not open an HTTP port.
+**Background Worker (alternative):** No HTTP port needed. Same start command; Render does not set `PORT`.
 
-**Fix:**
+If you previously saw `No open ports detected` → `Timed Out`, **pull the latest code and redeploy** — the health server fix is required for Web Service.
 
-1. Render Dashboard → your service → **Settings**
-2. If there is no “Background Worker” type, **delete** this service
-3. **New +** → **Background Worker** (not Web Service)
-4. Connect repo, set:
-   - **Build command:** `pip install -r telegram-worker/requirements.txt`
-   - **Start command:** `cd telegram-worker && python listener.py`
-5. Add env vars (see below)
-
-Or use **Blueprint** from `render.yaml` — it creates `placemint-telegram-worker` as `type: worker` automatically.
+Optional: switch to **Background Worker** in Render if you prefer (no public URL, often cheaper).
 
 ### Python version (important)
 

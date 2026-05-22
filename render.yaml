@@ -22,11 +22,14 @@ services:
       - key: TELEGRAM_WORKER_SECRET
         sync: false
 
-  - type: worker
+  # Telegram listener — use Web Service (binds PORT /health) OR Background Worker (no PORT).
+  # If you already created a Web Service on Render, redeploy after pulling this repo.
+  - type: web
     name: placemint-telegram-worker
     runtime: python
     buildCommand: pip install -r telegram-worker/requirements.txt
-    startCommand: cd telegram-worker && python3.11 -u listener.py
+    startCommand: cd telegram-worker && python -u listener.py
+    healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
