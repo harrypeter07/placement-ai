@@ -55,7 +55,7 @@ export async function completeTelegramLogin(
         { apiId, apiHash },
         {
           phoneNumber,
-          phoneCode: code.trim(),
+          phoneCode: async () => code.trim(),
           phoneCodeHash,
         }
       );
