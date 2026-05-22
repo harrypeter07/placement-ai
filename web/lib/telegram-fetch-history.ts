@@ -13,7 +13,7 @@ export type FetchedTelegramMessage = {
 function messageToRow(msg: Api.Message): FetchedTelegramMessage | null {
   if (!(msg instanceof Api.Message) || !msg.id) return null;
 
-  let text = msg.message || "";
+  const text = msg.message || "";
   let mediaType: FetchedTelegramMessage["mediaType"] = "none";
   let mediaLabel = "";
 
