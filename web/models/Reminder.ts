@@ -3,6 +3,8 @@ import mongoose, { Schema, type Model } from "mongoose";
 export type ReminderOffsetPreset = "1d" | "6h" | "1h" | "15m" | "custom";
 export type ReminderPriority = "low" | "medium" | "high" | "critical";
 export type ReminderStatus = "active" | "paused" | "completed" | "snoozed" | "cancelled";
+export type EscalationLevel = "soft" | "normal" | "urgent" | "critical";
+export type ReminderStyle = "gentle" | "balanced" | "aggressive";
 
 export interface IReminder {
   _id: mongoose.Types.ObjectId;
@@ -24,6 +26,11 @@ export interface IReminder {
   aiSuggested: boolean;
   /** Simple repeat: "none" | "daily" until deadline */
   repeatRule: "none" | "daily";
+  escalationLevel: EscalationLevel;
+  escalationCount: number;
+  reminderStyle: ReminderStyle;
+  lastNotifiedAt?: Date;
+  aiSummary?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -56,6 +63,19 @@ const ReminderSchema = new Schema<IReminder>(
     enabled: { type: Boolean, default: true },
     aiSuggested: { type: Boolean, default: false },
     repeatRule: { type: String, enum: ["none", "daily"], default: "none" },
+    escalationLevel: {
+      type: String,
+      enum: ["soft", "normal", "urgent", "critical"],
+      default: "normal",
+    },
+    escalationCount: { type: Number, default: 0 },
+    reminderStyle: {
+      type: String,
+      enum: ["gentle", "balanced", "aggressive"],
+      default: "balanced",
+    },
+    lastNotifiedAt: { type: Date },
+    aiSummary: { type: String },
   },
   { timestamps: true }
 );

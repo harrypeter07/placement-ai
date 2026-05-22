@@ -19,6 +19,7 @@ export const siteConfig = {
     student: [
       { title: "Overview", href: "/dashboard", icon: "LayoutDashboard" },
       { title: "Placements", href: "/dashboard/deadlines", icon: "Clock" },
+      { title: "Reminder Hub", href: "/dashboard/reminders", icon: "AlarmClock" },
       { title: "Calendar", href: "/dashboard/calendar", icon: "Calendar" },
       { title: "Notifications", href: "/dashboard/notifications", icon: "Bell" },
       { title: "Automation", href: "/dashboard/automation", icon: "Zap" },

@@ -8,12 +8,19 @@ export interface IStudentPreferences {
   reminders: {
     defaultOffsetsMinutes: number[];
     sound: boolean;
+    vibration: boolean;
+    defaultEscalation: "soft" | "normal" | "urgent" | "critical";
+    smartAiMode: boolean;
   };
   notifications: {
     browser: boolean;
     email: boolean;
     telegram: boolean;
     inApp: boolean;
+    push: boolean;
+    quietHoursEnabled: boolean;
+    quietHoursStart: string;
+    quietHoursEnd: string;
   };
   calendar: {
     autoSync: boolean;
@@ -57,12 +64,19 @@ const defaults = {
   reminders: {
     defaultOffsetsMinutes: [24 * 60, 6 * 60, 60, 15],
     sound: true,
+    vibration: true,
+    defaultEscalation: "normal" as const,
+    smartAiMode: true,
   },
   notifications: {
     browser: true,
     email: false,
     telegram: false,
     inApp: true,
+    push: true,
+    quietHoursEnabled: false,
+    quietHoursStart: "22:00",
+    quietHoursEnd: "07:00",
   },
   calendar: {
     autoSync: true,
@@ -104,12 +118,23 @@ const StudentPreferencesSchema = new Schema<IStudentPreferences>(
     reminders: {
       defaultOffsetsMinutes: { type: [Number], default: defaults.reminders.defaultOffsetsMinutes },
       sound: { type: Boolean, default: defaults.reminders.sound },
+      vibration: { type: Boolean, default: defaults.reminders.vibration },
+      defaultEscalation: {
+        type: String,
+        enum: ["soft", "normal", "urgent", "critical"],
+        default: defaults.reminders.defaultEscalation,
+      },
+      smartAiMode: { type: Boolean, default: defaults.reminders.smartAiMode },
     },
     notifications: {
       browser: { type: Boolean, default: defaults.notifications.browser },
       email: { type: Boolean, default: defaults.notifications.email },
       telegram: { type: Boolean, default: defaults.notifications.telegram },
       inApp: { type: Boolean, default: defaults.notifications.inApp },
+      push: { type: Boolean, default: defaults.notifications.push },
+      quietHoursEnabled: { type: Boolean, default: defaults.notifications.quietHoursEnabled },
+      quietHoursStart: { type: String, default: defaults.notifications.quietHoursStart },
+      quietHoursEnd: { type: String, default: defaults.notifications.quietHoursEnd },
     },
     calendar: {
       autoSync: { type: Boolean, default: defaults.calendar.autoSync },
