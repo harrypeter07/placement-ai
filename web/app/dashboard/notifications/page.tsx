@@ -275,7 +275,8 @@ export default function NotificationsPage() {
         const prefsRes = await fetch("/api/settings");
         const prefs = await prefsRes.json();
         if (prefs?.telegram?.autoInsights === false) return;
-        await runInsights();
+        const mode = prefs?.telegram?.insightsApplyMode === "all" ? "all" : "preview";
+        await runInsights(undefined, mode);
       } catch {
         /* ignore poll errors */
       }

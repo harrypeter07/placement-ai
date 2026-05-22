@@ -564,15 +564,59 @@ export default function SettingsPage() {
                     value={prefs.telegram?.insightMessageCount ?? 25}
                     onChange={(e) =>
                       nest("telegram", {
+                        ...(prefs.telegram || { monitoredGroupIds: [] }),
                         insightMessageCount: Math.min(100, Math.max(5, Number(e.target.value) || 25)),
-                        monitoredGroupIds: prefs.telegram?.monitoredGroupIds ?? [],
-                        autoInsights: prefs.telegram?.autoInsights ?? true,
-                        autoCreateDeadlines: prefs.telegram?.autoCreateDeadlines ?? true,
-                        autoCreateReminders: prefs.telegram?.autoCreateReminders ?? true,
                       })
                     }
                   />
                 </fieldset>
+                <fieldset className="space-y-2 border-0 p-0">
+                  <Label>Only analyze messages since (optional)</Label>
+                  <Input
+                    type="date"
+                    value={
+                      prefs.telegram?.insightSinceDate
+                        ? new Date(prefs.telegram.insightSinceDate as unknown as string)
+                            .toISOString()
+                            .slice(0, 10)
+                        : ""
+                    }
+                    onChange={(e) =>
+                      nest("telegram", {
+                        ...(prefs.telegram || { monitoredGroupIds: [] }),
+                        insightSinceDate: e.target.value || null,
+                      })
+                    }
+                  />
+                </fieldset>
+                <fieldset className="space-y-2 border-0 p-0">
+                  <Label>After AI analysis</Label>
+                  <Select
+                    value={prefs.telegram?.insightsApplyMode ?? "preview"}
+                    onValueChange={(v) =>
+                      nest("telegram", {
+                        ...(prefs.telegram || { monitoredGroupIds: [] }),
+                        insightsApplyMode: v as "preview" | "all" | "none",
+                      })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="preview">Preview first (recommended)</SelectItem>
+                      <SelectItem value="all">Auto-apply all deadlines & reminders</SelectItem>
+                      <SelectItem value="none">Insights only (no auto-create)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </fieldset>
+                <PrefSwitchRow
+                  label="Pin applied insights on dashboard overview"
+                  checked={prefs.telegram?.insightPinToOverview ?? true}
+                  onChange={(v) =>
+                    nest("telegram", { ...(prefs.telegram || { monitoredGroupIds: [] }), insightPinToOverview: v })
+                  }
+                />
                 <PrefSwitchRow label="Auto-run insights on monitored groups" checked={prefs.telegram?.autoInsights ?? true} onChange={(v) => nest("telegram", { ...(prefs.telegram || { insightMessageCount: 25, monitoredGroupIds: [] }), autoInsights: v })} />
                 <PrefSwitchRow label="Auto-create deadlines from insights" checked={prefs.telegram?.autoCreateDeadlines ?? true} onChange={(v) => nest("telegram", { ...(prefs.telegram || { insightMessageCount: 25, monitoredGroupIds: [] }), autoCreateDeadlines: v })} />
                 <PrefSwitchRow label="Auto-create reminders from insights" checked={prefs.telegram?.autoCreateReminders ?? true} onChange={(v) => nest("telegram", { ...(prefs.telegram || { insightMessageCount: 25, monitoredGroupIds: [] }), autoCreateReminders: v })} />

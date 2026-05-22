@@ -44,6 +44,7 @@ export function TelegramConnectCard() {
   const [sendingCode, setSendingCode] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [syncingWorker, setSyncingWorker] = useState(false);
   const [needs2fa, setNeeds2fa] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
 
@@ -148,6 +149,14 @@ export function TelegramConnectCard() {
       setPassword("");
       setNeeds2fa(false);
       await load();
+      try {
+        const syncRes = await fetch("/api/telegram/auth/sync-worker-session", { method: "POST" });
+        const syncData = await syncRes.json();
+        if (syncRes.ok) toast.message("Render worker session synced");
+        else if (syncData.error) toast.message(syncData.error);
+      } catch {
+        /* optional */
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not verify");
     } finally {
@@ -210,10 +219,32 @@ export function TelegramConnectCard() {
             The Render worker checks every 30s and connects automatically. Then enable groups in{" "}
             <strong>Notifications</strong>.
           </p>
-          <LoadingButton variant="outline" size="sm" loading={disconnecting} onClick={() => void disconnect()}>
-            <LogOut className="h-4 w-4 mr-1" />
-            Disconnect
-          </LoadingButton>
+          <div className="flex flex-wrap gap-2">
+            <LoadingButton
+              variant="glow"
+              size="sm"
+              loading={syncingWorker}
+              onClick={async () => {
+                setSyncingWorker(true);
+                try {
+                  const res = await fetch("/api/telegram/auth/sync-worker-session", { method: "POST" });
+                  const data = await res.json();
+                  if (!res.ok) throw new Error(data.error || "Sync failed");
+                  toast.success(data.message || "Worker session synced — redeploy Render if needed");
+                } catch (e) {
+                  toast.error(e instanceof Error ? e.message : "Sync failed");
+                } finally {
+                  setSyncingWorker(false);
+                }
+              }}
+            >
+              Sync Render worker session
+            </LoadingButton>
+            <LoadingButton variant="outline" size="sm" loading={disconnecting} onClick={() => void disconnect()}>
+              <LogOut className="h-4 w-4 mr-1" />
+              Disconnect
+            </LoadingButton>
+          </div>
         </CardContent>
       </Card>
     );

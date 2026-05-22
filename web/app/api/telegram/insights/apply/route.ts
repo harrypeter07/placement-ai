@@ -27,6 +27,8 @@ export async function POST(req: Request) {
 
     await connectDB();
     const prefs = await StudentPreferences.findOne({ userId: user.id });
+    const pinDefault = prefs?.telegram?.insightPinToOverview ?? true;
+    const pinToOverview = parsed.data.pinToOverview ?? pinDefault;
     const rows = await PlacementInsight.find({
       _id: { $in: parsed.data.insightIds },
       userId: user.id,
@@ -45,7 +47,7 @@ export async function POST(req: Request) {
       const applied = await applySingleInsight(user.id, row, prefs, {
         createDeadlines: parsed.data.createDeadlines,
         createReminders: parsed.data.createReminders,
-        pinToOverview: parsed.data.pinToOverview ?? false,
+        pinToOverview,
         markApplied: true,
       });
       results.push(applied);

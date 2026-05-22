@@ -15,7 +15,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAppStore } from "@/store/use-app-store";
 
 const icons: Record<string, React.ElementType> = {
-  LayoutDashboard, Clock, Calendar, Bell, CheckCircle, FileText, BarChart3, Settings, AlarmClock, Zap,
+  LayoutDashboard, Clock, Calendar, Bell, CheckCircle, FileText, BarChart3, Settings, AlarmClock, Zap, Sparkles,
 };
 
 export function DashboardSidebar() {

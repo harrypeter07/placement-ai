@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { Clock, CheckCircle, XCircle, Target, Bell, Flame, TrendingUp } from "lucide-react";
+import Link from "next/link";
+import { Clock, CheckCircle, XCircle, Target, Bell, Flame, TrendingUp, Sparkles } from "lucide-react";
 import { DashboardHeader } from "@/components/dashboard/sidebar";
 import { SystemStatusBar } from "@/components/dashboard/system-status";
 import { StatCard } from "@/components/dashboard/stat-card";
@@ -20,6 +21,9 @@ export default function DashboardPage() {
     upcomingChart: { company: string; daysLeft: number }[];
     statusBreakdown: { _id: string; count: number }[];
   } | null>(null);
+  const [pinnedInsights, setPinnedInsights] = useState<
+    { _id: string; title: string; summary: string; urgency: string }[]
+  >([]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -48,6 +52,13 @@ export default function DashboardPage() {
         clearTimeout(timeout);
         setLoading(false);
       });
+
+    fetch("/api/telegram/insights?overview=pinned", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => {
+        if (Array.isArray(d)) setPinnedInsights(d.slice(0, 5));
+      })
+      .catch(() => undefined);
 
     return () => {
       clearTimeout(timeout);
@@ -83,6 +94,27 @@ export default function DashboardPage() {
             <StatCard title="Eligible" value={stats?.eligibleCompanies ?? 0} icon={Target} />
             <StatCard title="Reminders" value={stats?.reminderCount ?? 0} icon={Bell} />
           </motion.div>
+        )}
+
+        {pinnedInsights.length > 0 && (
+          <Card className="glass border-primary/25">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Sparkles className="h-4 w-4 text-primary" /> Pinned AI insights
+              </CardTitle>
+              <Link href="/dashboard/insights" className="text-xs text-primary underline">
+                View all
+              </Link>
+            </CardHeader>
+            <CardContent className="space-y-2">
+              {pinnedInsights.map((ins) => (
+                <div key={ins._id} className="rounded-lg bg-primary/10 p-3 text-sm">
+                  <p className="font-medium">{ins.title}</p>
+                  <p className="text-muted-foreground text-xs mt-1 line-clamp-2">{ins.summary}</p>
+                </div>
+              ))}
+            </CardContent>
+          </Card>
         )}
 
         <motion.div className="grid gap-4 sm:grid-cols-2">
