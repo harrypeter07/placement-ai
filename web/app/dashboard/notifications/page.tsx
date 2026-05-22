@@ -10,7 +10,10 @@ import {
   Users,
   RefreshCw,
   Search,
+  Download,
+  Info,
 } from "lucide-react";
+import { TelegramChatMessage } from "@/components/dashboard/telegram-chat-message";
 import { DashboardHeader } from "@/components/dashboard/sidebar";
 import { LoadingButton } from "@/components/ui/loading-button";
 import { Button } from "@/components/ui/button";
@@ -46,6 +49,8 @@ interface TelegramMsg {
   text: string;
   senderName?: string;
   sentAt: string;
+  mediaType?: string;
+  hasMedia?: boolean;
 }
 
 interface SystemNotif {
@@ -82,6 +87,10 @@ export default function NotificationsPage() {
   const [groupSearch, setGroupSearch] = useState("");
   const [runningInsights, setRunningInsights] = useState(false);
   const [syncingCatalog, setSyncingCatalog] = useState(false);
+  const [fetchingMessages, setFetchingMessages] = useState(false);
+  const [analyzingGroup, setAnalyzingGroup] = useState(false);
+  const [groupFilter, setGroupFilter] = useState<"all" | "monitored">("all");
+  const [groupInsights, setGroupInsights] = useState<PlacementInsight[]>([]);
   const insightsRan = useRef(false);
 
   const {
@@ -150,10 +159,15 @@ export default function NotificationsPage() {
     return () => clearInterval(id);
   }, [selectedGroupId, loadMessages]);
 
-  const runInsights = useCallback(async () => {
+  const runInsights = useCallback(async (groupId?: string) => {
     setRunningInsights(true);
+    if (groupId) setAnalyzingGroup(true);
     try {
-      const res = await fetch("/api/telegram/insights", { method: "POST" });
+      const res = await fetch("/api/telegram/insights", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(groupId ? { groupId } : {}),
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Insights failed");
       const list = Array.isArray(data.insights) ? data.insights : [];
@@ -166,15 +180,46 @@ export default function NotificationsPage() {
       toast.success(
         `AI processed chats — ${list.length} insight(s), ${c?.deadlines ?? 0} deadline(s), ${c?.reminders ?? 0} reminder(s) auto-created`
       );
-      if (data.processingNotes) {
+      if (data.processingNotes && !groupId) {
         console.info("[insights]", data.processingNotes);
+      } else if (data.processingNotes && groupId) {
+        toast.message(data.processingNotes);
+      }
+      if (groupId) {
+        const gRes = await fetch(`/api/telegram/insights?groupId=${encodeURIComponent(groupId)}`);
+        const gData = await gRes.json();
+        setGroupInsights(Array.isArray(gData) ? gData : []);
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not run insights");
     } finally {
       setRunningInsights(false);
+      setAnalyzingGroup(false);
     }
   }, [cache, setInsights]);
+
+  const fetchMessagesFromTelegram = useCallback(
+    async (groupId: string) => {
+      setFetchingMessages(true);
+      try {
+        const res = await fetch("/api/telegram/messages/fetch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ groupId, limit: 60 }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Fetch failed");
+        await loadMessages(groupId);
+        await refreshGroups();
+        toast.success(data.message || `Loaded ${data.fetched} messages`);
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Could not load messages");
+      } finally {
+        setFetchingMessages(false);
+      }
+    },
+    [loadMessages, refreshGroups]
+  );
 
   useEffect(() => {
     if (insightsRan.current || tab !== "insights") return;
@@ -248,20 +293,25 @@ export default function NotificationsPage() {
   const showChatPanel = selectedGroupId !== null;
   const groupList = groups || [];
   const q = groupSearch.trim().toLowerCase();
-  const filteredGroups = q
+  const filteredGroups = (q
     ? groupList.filter(
         (g) =>
           g.title.toLowerCase().includes(q) ||
           g.groupId.includes(q) ||
           (g as { username?: string }).username?.toLowerCase().includes(q)
       )
-    : groupList;
+    : groupList
+  ).filter((g) => (groupFilter === "monitored" ? g.monitoringEnabled : true));
   const monitoredCount = groupList.filter((g) => g.monitoringEnabled).length;
 
   function selectGroup(groupId: string) {
     setSelectedGroupId(groupId);
     setMessages([]);
+    setGroupInsights([]);
     void loadMessages(groupId);
+    void fetch(`/api/telegram/insights?groupId=${encodeURIComponent(groupId)}`)
+      .then((r) => r.json())
+      .then((d) => setGroupInsights(Array.isArray(d) ? d : []));
   }
 
   function backToGroups() {
@@ -314,8 +364,13 @@ export default function NotificationsPage() {
             >
               <RefreshCw className="h-4 w-4 mr-1" /> Refresh list
             </LoadingButton>
-            <LoadingButton variant="glow" size="sm" loading={runningInsights} onClick={() => void runInsights()}>
-              <Sparkles className="h-4 w-4 mr-1" /> Run AI now
+            <LoadingButton
+              variant="glow"
+              size="sm"
+              loading={runningInsights && !analyzingGroup}
+              onClick={() => void runInsights()}
+            >
+              <Sparkles className="h-4 w-4 mr-1" /> AI (monitored)
             </LoadingButton>
           </div>
         </div>
@@ -392,13 +447,29 @@ export default function NotificationsPage() {
             )}
           </div>
         ) : (
-          <div className="grid lg:grid-cols-[340px_1fr] gap-4 h-[calc(100vh-12rem)] min-h-[480px]">
+          <>
+          <Card className="glass border-primary/20 mb-4">
+            <CardContent className="p-4 flex gap-3 text-sm">
+              <Info className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+              <div className="text-muted-foreground space-y-1">
+                <p>
+                  <strong className="text-foreground">Monitor toggle</strong> (right of each group) = AI watches
+                  only those groups for placements. You do not need to monitor everything.
+                </p>
+                <p>
+                  Open a chat → <strong>Load messages</strong> from Telegram → <strong>Analyze this group</strong> for
+                  insights stored per group.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+          <div className="grid lg:grid-cols-[340px_1fr] gap-4 h-[calc(100vh-14rem)] min-h-[480px]">
             <Card className={cn("glass flex flex-col overflow-hidden", showChatPanel && "hidden lg:flex")}>
               <div className="p-4 border-b border-white/5 space-y-3">
                 <div>
                   <h2 className="text-sm font-semibold flex items-center gap-2">
                     <Users className="h-4 w-4 text-primary" />
-                    Your Telegram groups
+                    Groups & channels
                   </h2>
                   <p className="text-xs text-muted-foreground mt-1">
                     {groupList.length > 0 ? (
@@ -419,6 +490,24 @@ export default function NotificationsPage() {
                       <span className="text-primary"> · {monitoredCount} monitored</span>
                     )}
                   </p>
+                </div>
+                <div className="flex gap-1">
+                  <Button
+                    size="sm"
+                    variant={groupFilter === "all" ? "default" : "outline"}
+                    className="h-7 text-xs flex-1"
+                    onClick={() => setGroupFilter("all")}
+                  >
+                    All
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={groupFilter === "monitored" ? "default" : "outline"}
+                    className="h-7 text-xs flex-1"
+                    onClick={() => setGroupFilter("monitored")}
+                  >
+                    Monitored ({monitoredCount})
+                  </Button>
                 </div>
                 <div className="relative">
                   <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
@@ -492,7 +581,7 @@ export default function NotificationsPage() {
                               onCheckedChange={(v) => void toggleMonitoring(g.groupId, v)}
                               aria-label={`Monitor ${g.title}`}
                             />
-                            <Label className="text-[9px] text-muted-foreground">Monitor</Label>
+                            <Label className="text-[9px] text-muted-foreground font-medium">AI Monitor</Label>
                           </div>
                         </div>
                         <div className="flex justify-between items-center mt-2 pl-0">
@@ -522,44 +611,101 @@ export default function NotificationsPage() {
                 </CardContent>
               ) : (
                 <>
-                  <div className="p-4 border-b border-white/5 flex items-center gap-3">
-                    <Button variant="ghost" size="icon" className="lg:hidden shrink-0" onClick={backToGroups}>
-                      <ArrowLeft className="h-4 w-4" />
-                    </Button>
-                    <div className="min-w-0 flex-1">
-                      <h2 className="font-semibold truncate">{selectedGroup.title}</h2>
-                      <p className="text-xs text-muted-foreground">{selectedGroup.groupId}</p>
+                  <div className="p-4 border-b border-white/5 space-y-3">
+                    <div className="flex items-center gap-3">
+                      <Button variant="ghost" size="icon" className="lg:hidden shrink-0" onClick={backToGroups}>
+                        <ArrowLeft className="h-4 w-4" />
+                      </Button>
+                      <div className="min-w-0 flex-1">
+                        <h2 className="font-semibold truncate">{selectedGroup.title}</h2>
+                        <p className="text-xs text-muted-foreground flex items-center gap-2 flex-wrap">
+                          {selectedGroup.monitoringEnabled ? (
+                            <Badge variant="success" className="text-[10px] h-5">
+                              AI monitoring ON
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-[10px] h-5">
+                              Monitoring OFF
+                            </Badge>
+                          )}
+                          <span>{selectedGroup.messageCount} stored</span>
+                        </p>
+                      </div>
+                      <div className="flex flex-col items-center gap-0.5 shrink-0">
+                        <Switch
+                          checked={!!selectedGroup.monitoringEnabled}
+                          disabled={togglingGroupId === selectedGroup.groupId}
+                          onCheckedChange={(v) => void toggleMonitoring(selectedGroup.groupId, v)}
+                        />
+                        <span className="text-[9px] text-muted-foreground">Monitor</span>
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <LoadingButton
+                        size="sm"
+                        variant="outline"
+                        loading={fetchingMessages}
+                        onClick={() => void fetchMessagesFromTelegram(selectedGroup.groupId)}
+                      >
+                        <Download className="h-4 w-4 mr-1" /> Load messages
+                      </LoadingButton>
+                      <LoadingButton
+                        size="sm"
+                        variant="glow"
+                        loading={analyzingGroup}
+                        onClick={() => void runInsights(selectedGroup.groupId)}
+                      >
+                        <Sparkles className="h-4 w-4 mr-1" /> Analyze this group
+                      </LoadingButton>
                     </div>
                   </div>
                   <ScrollArea className="flex-1 p-4">
-                    {loadingMessages ? (
+                    {loadingMessages && !messages.length ? (
                       <div className="space-y-3">
                         {Array.from({ length: 5 }).map((_, i) => (
                           <Skeleton key={i} className="h-16 rounded-lg" />
                         ))}
                       </div>
                     ) : messages.length === 0 ? (
-                      <p className="text-center text-sm text-muted-foreground py-12">No messages stored yet.</p>
+                      <div className="text-center text-sm text-muted-foreground py-12 space-y-3">
+                        <p>No messages in database for this chat.</p>
+                        <LoadingButton
+                          variant="glow"
+                          size="sm"
+                          loading={fetchingMessages}
+                          onClick={() => void fetchMessagesFromTelegram(selectedGroup.groupId)}
+                        >
+                          <Download className="h-4 w-4 mr-1" /> Load messages from Telegram
+                        </LoadingButton>
+                      </div>
                     ) : (
                       <div className="space-y-3">
                         {messages.map((m) => (
-                          <div key={m._id} className="rounded-xl border border-white/5 bg-muted/30 p-3">
-                            {m.senderName && (
-                              <p className="text-xs font-medium text-primary mb-1">{m.senderName}</p>
-                            )}
-                            <p className="text-sm whitespace-pre-wrap break-words">{m.text}</p>
-                            <p className="text-[10px] text-muted-foreground mt-2 text-right">
-                              {formatDate(m.sentAt)}
-                            </p>
-                          </div>
+                          <TelegramChatMessage key={m._id} message={m} />
                         ))}
                       </div>
                     )}
                   </ScrollArea>
+                  {groupInsights.length > 0 && (
+                    <div className="p-3 border-t border-white/5 max-h-40 overflow-y-auto">
+                      <p className="text-xs font-semibold mb-2 flex items-center gap-1">
+                        <Sparkles className="h-3 w-3" /> Insights for this group
+                      </p>
+                      <div className="space-y-2">
+                        {groupInsights.slice(0, 3).map((ins) => (
+                          <div key={ins._id} className="text-xs rounded-lg bg-primary/10 p-2">
+                            <span className="font-medium">{ins.title}</span>
+                            <p className="text-muted-foreground line-clamp-2">{ins.summary}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </Card>
           </div>
+          </>
         )}
       </main>
     </>

@@ -29,6 +29,8 @@ export async function storeTelegramMessage(input: {
   text: string;
   senderName?: string;
   sentAt: Date;
+  mediaType?: string;
+  hasMedia?: boolean;
 }) {
   const preview = input.text.slice(0, 120).replace(/\s+/g, " ").trim();
 
@@ -38,7 +40,32 @@ export async function storeTelegramMessage(input: {
     groupId: input.groupId,
     messageId: input.messageId,
   });
-  if (existing) return { created: false, message: existing };
+
+  if (existing) {
+    await TelegramMessage.updateOne(
+      { _id: existing._id },
+      {
+        $set: {
+          text: input.text,
+          senderName: input.senderName,
+          sentAt: input.sentAt,
+          mediaType: input.mediaType || "none",
+          hasMedia: !!input.hasMedia,
+        },
+      }
+    );
+    await TelegramGroup.updateOne(
+      { groupId: input.groupId },
+      {
+        $set: {
+          title: input.groupTitle,
+          lastMessageAt: input.sentAt,
+          lastMessagePreview: preview,
+        },
+      }
+    );
+    return { created: false, updated: true, message: existing };
+  }
 
   const message = await TelegramMessage.create({
     groupId: input.groupId,
@@ -46,6 +73,8 @@ export async function storeTelegramMessage(input: {
     text: input.text,
     senderName: input.senderName,
     sentAt: input.sentAt,
+    mediaType: input.mediaType || "none",
+    hasMedia: !!input.hasMedia,
   });
 
   await TelegramGroup.updateOne(
@@ -61,4 +90,30 @@ export async function storeTelegramMessage(input: {
   );
 
   return { created: true, message };
+}
+
+export async function bulkStoreTelegramMessages(
+  groupId: string,
+  groupTitle: string,
+  rows: {
+    messageId: string;
+    text: string;
+    senderName?: string;
+    sentAt: Date;
+    mediaType?: string;
+    hasMedia?: boolean;
+  }[]
+) {
+  let created = 0;
+  let updated = 0;
+  for (const row of rows) {
+    const r = await storeTelegramMessage({
+      groupId,
+      groupTitle,
+      ...row,
+    });
+    if (r.created) created++;
+    else if (r.updated) updated++;
+  }
+  return { created, updated, total: rows.length };
 }

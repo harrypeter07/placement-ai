@@ -11,7 +11,8 @@ import type { IStudentPreferences } from "@/models/StudentPreferences";
 export async function applyChatInsightsForUser(
   userId: string,
   insights: ChatInsightItem[],
-  prefs: IStudentPreferences | null
+  prefs: IStudentPreferences | null,
+  scopeGroupId?: string
 ) {
   await connectDB();
   const tg = prefs?.telegram;
@@ -19,7 +20,10 @@ export async function applyChatInsightsForUser(
   const autoRm = tg?.autoCreateReminders !== false;
   const master = prefs?.automation?.masterEnabled !== false;
 
-  await PlacementInsight.deleteMany({ userId });
+  await PlacementInsight.deleteMany({
+    userId,
+    ...(scopeGroupId ? { groupId: scopeGroupId } : {}),
+  });
 
   const created = { deadlines: 0, reminders: 0, insights: 0 };
 
