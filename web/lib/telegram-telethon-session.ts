@@ -29,9 +29,11 @@ function extractAuthKeyBuffer(session: unknown): Buffer | null {
 }
 
 function readDc(session: Record<string, unknown>) {
-  const dcId = Number(s.dcId ?? s._dcId ?? 2);
-  const serverAddress = String(s.serverAddress ?? s._serverAddress ?? DC_IPV4[dcId] ?? DC_IPV4[2]);
-  const port = Number(s.port ?? s._port ?? 443);
+  const dcId = Number(session.dcId ?? session._dcId ?? 2);
+  const serverAddress = String(
+    session.serverAddress ?? session._serverAddress ?? DC_IPV4[dcId] ?? DC_IPV4[2]
+  );
+  const port = Number(session.port ?? session._port ?? 443);
   return { dcId, serverAddress, port };
 }
 
