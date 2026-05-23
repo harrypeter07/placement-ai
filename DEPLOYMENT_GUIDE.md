@@ -7,6 +7,43 @@ This project has two deploy targets:
 
 ---
 
+## 0) Pushed to GitHub but the live site does not change?
+
+Your commits **are** on GitHub if `git status` says clean and `main` matches `origin/main`. The live app only updates when **Vercel** (web UI) and **Render** (worker) each complete a **successful** deploy.
+
+| You changed | Must redeploy on |
+|-------------|------------------|
+| `web/` (dashboard, APIs, settings UI) | **Vercel** |
+| `telegram-worker/` (listener.py) | **Render** (`placemint-telegram-worker`) |
+| `.github/workflows/` | GitHub Actions only (not the website) |
+
+### Check Vercel (most common)
+
+1. [vercel.com](https://vercel.com) → your project → **Deployments**
+2. Open the latest deployment for branch **`main`**
+3. If status is **Error** or **Failed** → the site stays on the **old** build (push alone does nothing useful)
+
+**Fix the usual misconfiguration** (build succeeds but deploy fails):
+
+- **Settings → General → Root Directory**: pick **one** mode:
+  - **`web`** → uses `web/vercel.json` — **Output Directory must be empty** (not `web/.next`)
+  - **`.`** (repo root) → uses root `vercel.json` — **Output Directory must be empty**
+- **Settings → Build → Output Directory**: **leave blank** (do not use `web/.next` unless root is repo root and you know what you are doing)
+- **Production Branch**: `main`
+- **Git**: connected to `harrypeter07/placement-ai`
+- After fixing: **Deployments → … → Redeploy** (check **Use existing Build Cache** off once)
+
+Confirm the new build: open your site → hard refresh (`Ctrl+Shift+R`) or incognito. Optional: add `?v=1` to the URL.
+
+### Check Render (worker only)
+
+1. [dashboard.render.com](https://dashboard.render.com) → **placemint-telegram-worker**
+2. **Events** / **Logs** — last deploy should match your latest Git commit
+3. **Settings → Build & Deploy → Auto-Deploy**: On, branch `main`
+4. If no auto-deploy: **Manual Deploy → Deploy latest commit**
+
+---
+
 ## 1) Fix your current Vercel error
 
 Your build completed, but deploy failed with:
