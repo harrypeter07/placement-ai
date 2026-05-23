@@ -154,6 +154,17 @@ Add on **Vercel**:
 
 Manual test: open `https://<render-worker>/health` — should return `"ok": true` and `"mode": "web"`.
 
+#### GitHub Actions keep-alive (free, every 2 minutes)
+
+Repo includes `.github/workflows/keep-worker-alive.yml`.
+
+1. GitHub → your repo → **Settings** → **Secrets and variables** → **Actions**
+2. Add secret **`WORKER_URL`** = `https://placement-ai-2lhp.onrender.com` (your Render URL, no trailing slash)
+3. Optional: **`VERCEL_APP_URL`** = your Vercel URL, **`CRON_SECRET`** = `TELEGRAM_WORKER_SECRET`
+4. Push to `main` — **Actions** tab shows runs; each run prints `waitReason` if still waiting
+
+Note: GitHub may not run exactly every 2 minutes (platform scheduling), but it still pings regularly at no cost.
+
 #### Verify logs after deploy
 
 ```

@@ -16,6 +16,12 @@ interface HealthData {
 interface TelegramData {
   connected: boolean;
   workerStatus: string;
+  workerWaiting?: boolean;
+  workerLastError?: string;
+  workerDetailLog?: string;
+  suggestedFix?: string;
+  telegramAccountConnected?: boolean;
+  hasTelethonSession?: boolean;
   groupsMonitored: number;
   telegramDeadlines: number;
   workerConfigured?: boolean;
@@ -124,22 +130,44 @@ export function SystemStatusBar() {
       {healthError && (
         <p className="mt-2 text-xs text-muted-foreground">{healthError}</p>
       )}
-      {!workerOk && (
+      {telegram?.workerWaiting && (
+        <div className="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 space-y-2 text-xs">
+          <p className="font-semibold text-amber-200">Why status is &quot;waiting&quot;</p>
+          {telegram.suggestedFix && (
+            <p>
+              <strong className="text-foreground">Fix:</strong> {telegram.suggestedFix}
+            </p>
+          )}
+          {telegram.workerLastError && (
+            <p className="text-muted-foreground">{telegram.workerLastError}</p>
+          )}
+          {telegram.hasTelethonSession === false && telegram.telegramAccountConnected && (
+            <p className="text-amber-100">
+              Website has Telegram login but <strong>Render needs Telethon session</strong> → Settings →
+              &quot;Sync Render worker session&quot;.
+            </p>
+          )}
+          {telegram.workerDetailLog ? (
+            <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded bg-black/50 p-2 font-mono text-[10px] text-muted-foreground">
+              {telegram.workerDetailLog}
+            </pre>
+          ) : (
+            <p className="text-muted-foreground">
+              Deploy latest Vercel + Render, then click Refresh above. Open your Render URL +{" "}
+              <code className="bg-muted px-1 rounded">/health</code> — read{" "}
+              <code className="bg-muted px-1 rounded">waitReason</code> and{" "}
+              <code className="bg-muted px-1 rounded">detailLog</code>.
+            </p>
+          )}
+          <p className="text-muted-foreground">
+            Full details: <strong>Settings</strong> → Worker & monitoring (scroll down). Render: Logs with{" "}
+            <code className="bg-muted px-1 rounded">[session]</code> lines.
+          </p>
+        </div>
+      )}
+      {!workerOk && !telegram?.workerWaiting && (
         <div className="mt-3 text-xs text-amber-400/90 space-y-1">
-          <p>Worker terminal running but dashboard shows offline? Usually:</p>
-          <ul className="list-disc list-inside ml-1">
-            <li>
-              <code className="bg-muted px-1 rounded">WEB_APP_URL</code> in worker{" "}
-              <code className="bg-muted px-1 rounded">.env</code> must match dev server (try{" "}
-              <code className="bg-muted px-1 rounded">http://localhost:3001</code> if port 3000 is busy)
-            </li>
-            <li>
-              <code className="bg-muted px-1 rounded">TELEGRAM_WORKER_SECRET</code> must match in{" "}
-              <code className="bg-muted px-1 rounded">web/.env</code> and worker{" "}
-              <code className="bg-muted px-1 rounded">.env</code>
-            </li>
-            <li>Restart <code className="bg-muted px-1 rounded">listener.py</code> after changing env</li>
-          </ul>
+          <p>Worker offline? Check Render deploy + matching secrets.</p>
         </div>
       )}
       {workerOk && (
