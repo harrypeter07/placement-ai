@@ -75,14 +75,6 @@ export async function GET() {
       }
     }
 
-    const workerOnline =
-      !!heartbeat && isWorkerOnline(heartbeat.status, heartbeat.updatedAt);
-    const heartbeatWaiting =
-      !!heartbeat && isWorkerWaiting(heartbeat.status, heartbeat.updatedAt);
-    const workerNeedsTelethonSync =
-      telegramAccountConnected && !hasTelethonSession;
-    const workerWaiting = heartbeatWaiting || workerNeedsTelethonSync;
-
     const workerConfigured = !!process.env.TELEGRAM_WORKER_SECRET;
 
     let telegramAccountConnected = false;
@@ -95,6 +87,14 @@ export async function GET() {
       const th = sessionDoc?.telethonSessionString?.trim() || "";
       hasTelethonSession = th.length >= 40 && th.startsWith("1");
     }
+
+    const workerOnline =
+      !!heartbeat && isWorkerOnline(heartbeat.status, heartbeat.updatedAt);
+    const heartbeatWaiting =
+      !!heartbeat && isWorkerWaiting(heartbeat.status, heartbeat.updatedAt);
+    const workerNeedsTelethonSync =
+      telegramAccountConnected && !hasTelethonSession;
+    const workerWaiting = heartbeatWaiting || workerNeedsTelethonSync;
 
     const serverDiagnostics =
       workerWaiting || !telegramAccountConnected || !hasTelethonSession
