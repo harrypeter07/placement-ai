@@ -1,15 +1,18 @@
-# Free keep-alive: pings your Render worker so the Web Service stays warm.
-# GitHub may delay scheduled runs (often ~5–15 min) even with */2 — still helps.
+# Pings Render worker /health (free). Schedule: every 5 min (GitHub often ignores */2).
 #
-# Required repo secret: WORKER_URL = https://placement-ai-2lhp.onrender.com (no trailing slash)
-# Optional: VERCEL_APP_URL = https://plarm.vercel.app
-# Optional: CRON_SECRET = same as TELEGRAM_WORKER_SECRET (for Vercel /api/cron/worker-ping)
+# REQUIRED secret (Repository secrets → Actions):
+#   WORKER_URL = https://placement-ai-2lhp.onrender.com
+#   (no quotes, no trailing slash, no spaces)
+#
+# Optional:
+#   VERCEL_APP_URL = https://plarm.vercel.app
+#   CRON_SECRET = same as TELEGRAM_WORKER_SECRET
 
 name: Keep worker alive
 
 on:
   schedule:
-    - cron: "*/2 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch:
 
 jobs:
@@ -21,42 +24,43 @@ jobs:
         env:
           WORKER_URL: ${{ secrets.WORKER_URL }}
         run: |
-          if [ -z "$WORKER_URL" ]; then
-            echo "::error::Add GitHub secret WORKER_URL (e.g. https://placement-ai-2lhp.onrender.com)"
+          set -euo pipefail
+          if [ -z "${WORKER_URL:-}" ]; then
+            echo "::error::Missing GitHub secret WORKER_URL"
+            echo "Add: Settings → Secrets → Actions → WORKER_URL"
+            echo "Value example: https://placement-ai-2lhp.onrender.com"
             exit 1
           fi
-          echo "GET $WORKER_URL/health"
-          resp=$(curl -sS -w "\nHTTP_CODE:%{http_code}" "$WORKER_URL/health")
-          code=$(echo "$resp" | tail -1 | sed 's/HTTP_CODE://')
-          body=$(echo "$resp" | sed '$d')
-          echo "$body" | head -c 2000
+          # Trim whitespace / accidental quotes
+          BASE=$(printf '%s' "$WORKER_URL" | tr -d '\r\n' | sed 's/^["'\'']//;s/["'\'']$//' | xargs)
+          if ! printf '%s' "$BASE" | grep -qE '^https?://'; then
+            echo "::error::WORKER_URL must start with https:// (got: $BASE)"
+            exit 1
+          fi
+          BASE="${BASE%/}"
+          echo "GET $BASE/health"
+          body=$(curl -fsS "$BASE/health" || true)
+          echo "$body" | head -c 2500
           echo ""
-          echo "HTTP $code"
-          if [ "$code" != "200" ]; then
-            echo "::warning::Worker health returned $code"
-            exit 0
-          fi
-          echo "$body" | grep -q '"ok": true' || echo "::warning::Health JSON missing ok:true"
-          reason=$(echo "$body" | grep -o '"waitReason":"[^"]*"' | head -1 || true)
-          if [ -n "$reason" ]; then
-            echo "waitReason: $reason"
-          fi
-          telegram=$(echo "$body" | grep -o '"telegram":"[^"]*"' | head -1 || true)
-          echo "telegram status: $telegram"
+          echo "$body" | grep -q '"ok"' && echo "Health OK" || echo "::warning::Unexpected health response"
+          echo "$body" | grep -o '"telegram":"[^"]*"' || true
+          echo "$body" | grep -o '"waitReason":"[^"]*"' || true
 
       - name: Ping Vercel cron (optional)
         env:
           VERCEL_APP_URL: ${{ secrets.VERCEL_APP_URL }}
           CRON_SECRET: ${{ secrets.CRON_SECRET }}
         run: |
-          if [ -z "$VERCEL_APP_URL" ]; then
-            echo "VERCEL_APP_URL secret not set — skip"
+          if [ -z "${VERCEL_APP_URL:-}" ]; then
+            echo "VERCEL_APP_URL not set — skip"
             exit 0
           fi
-          url="$VERCEL_APP_URL/api/cron/worker-ping"
-          if [ -n "$CRON_SECRET" ]; then
-            curl -sS -H "Authorization: Bearer $CRON_SECRET" "$url" | head -c 1500
+          BASE=$(printf '%s' "$VERCEL_APP_URL" | tr -d '\r\n' | sed 's/^["'\'']//;s/["'\'']$//' | xargs)
+          BASE="${BASE%/}"
+          url="$BASE/api/cron/worker-ping"
+          if [ -n "${CRON_SECRET:-}" ]; then
+            curl -fsS -H "Authorization: Bearer $CRON_SECRET" "$url" | head -c 1500 || true
           else
-            curl -sS "$url" | head -c 1500
+            curl -fsS "$url" | head -c 1500 || true
           fi
           echo ""

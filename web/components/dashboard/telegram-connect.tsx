@@ -215,10 +215,13 @@ export function TelegramConnectCard() {
               <span className="text-xs text-muted-foreground">{status.phoneNumber}</span>
             )}
           </div>
-          <p className="text-sm text-muted-foreground">
-            The Render worker checks every 30s and connects automatically. Then enable groups in{" "}
-            <strong>Notifications</strong>.
-          </p>
+          <div className="rounded-lg border-2 border-primary/40 bg-primary/10 p-3 text-sm">
+            <p className="font-semibold text-primary">Required for Render worker</p>
+            <p className="text-muted-foreground mt-1">
+              If dashboard shows <strong>waiting</strong> / &quot;GramJS-only&quot;, click below once.
+              Render connects within ~30s — no redeploy needed.
+            </p>
+          </div>
           <div className="flex flex-wrap gap-2">
             <LoadingButton
               variant="glow"
@@ -229,8 +232,12 @@ export function TelegramConnectCard() {
                 try {
                   const res = await fetch("/api/telegram/auth/sync-worker-session", { method: "POST" });
                   const data = await res.json();
-                  if (!res.ok) throw new Error(data.error || "Sync failed");
-                  toast.success(data.message || "Worker session synced — redeploy Render if needed");
+                  if (!res.ok) throw new Error(data.error || data.hint || "Sync failed");
+                  toast.success(
+                    data.message ||
+                      `Synced (${data.telethonLength || "?"} chars). Wait 30s and refresh dashboard.`
+                  );
+                  await load();
                 } catch (e) {
                   toast.error(e instanceof Error ? e.message : "Sync failed");
                 } finally {

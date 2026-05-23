@@ -77,8 +77,11 @@ export async function GET() {
 
     const workerOnline =
       !!heartbeat && isWorkerOnline(heartbeat.status, heartbeat.updatedAt);
-    const workerWaiting =
+    const heartbeatWaiting =
       !!heartbeat && isWorkerWaiting(heartbeat.status, heartbeat.updatedAt);
+    const workerNeedsTelethonSync =
+      telegramAccountConnected && !hasTelethonSession;
+    const workerWaiting = heartbeatWaiting || workerNeedsTelethonSync;
 
     const workerConfigured = !!process.env.TELEGRAM_WORKER_SECRET;
 
@@ -102,14 +105,24 @@ export async function GET() {
     if (workerOnline) workerStatus = "online";
     else if (workerWaiting) workerStatus = "waiting";
 
+    const displayStatus = workerOnline
+      ? "online"
+      : workerWaiting
+        ? "waiting"
+        : workerStatus;
+
     return NextResponse.json({
       connected: workerOnline,
       telegramAccountConnected,
       hasTelethonSession,
+      workerNeedsTelethonSync,
       workerConfigured,
-      workerStatus,
+      workerStatus: displayStatus,
       workerWaiting,
-      workerLastError: heartbeat?.lastError,
+      workerLastError:
+        workerNeedsTelethonSync && !heartbeat?.lastError
+          ? "Session in DB is GramJS-only — click Sync Render worker session in Settings"
+          : heartbeat?.lastError,
       workerDetailLog:
         heartbeat?.detailLog ||
         serverDiagnostics?.detailLog ||

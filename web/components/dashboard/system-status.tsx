@@ -25,6 +25,7 @@ interface TelegramData {
   groupsMonitored: number;
   telegramDeadlines: number;
   workerConfigured?: boolean;
+  workerNeedsTelethonSync?: boolean;
 }
 
 function StatusDot({ ok }: { ok: boolean }) {
@@ -85,6 +86,10 @@ export function SystemStatusBar() {
   const dbOk = health?.database === "online";
   const apiOk = health !== null && (health.api === "online" || health.web === "online");
   const workerOk = telegram?.connected ?? false;
+  const workerWaiting =
+    telegram?.workerWaiting ||
+    telegram?.workerStatus === "waiting" ||
+    telegram?.workerNeedsTelethonSync;
   const statusLoading = initialLoading && health === null;
 
   return (
@@ -130,44 +135,38 @@ export function SystemStatusBar() {
       {healthError && (
         <p className="mt-2 text-xs text-muted-foreground">{healthError}</p>
       )}
-      {telegram?.workerWaiting && (
-        <div className="mt-3 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 space-y-2 text-xs">
-          <p className="font-semibold text-amber-200">Why status is &quot;waiting&quot;</p>
-          {telegram.suggestedFix && (
-            <p>
-              <strong className="text-foreground">Fix:</strong> {telegram.suggestedFix}
+      {workerWaiting && (
+        <div className="mt-3 rounded-lg border-2 border-amber-500/50 bg-amber-500/15 p-4 space-y-2 text-sm">
+          <p className="font-semibold text-amber-200">Why Telegram Worker shows &quot;waiting&quot;</p>
+          <p className="text-foreground font-medium">
+            {telegram?.workerNeedsTelethonSync
+              ? "Your account is connected on the website, but Render still needs a Telethon session."
+              : telegram?.workerLastError || "Worker is waiting for Telegram session."}
+          </p>
+          <ol className="list-decimal list-inside space-y-1 text-foreground">
+            <li>
+              Go to <strong>Settings</strong> (this page)
+            </li>
+            <li>
+              Click the green button: <strong>Sync Render worker session</strong>
+            </li>
+            <li>Wait 30–60 seconds, then click <strong>Refresh</strong> above</li>
+          </ol>
+          {telegram?.suggestedFix && (
+            <p className="text-xs text-muted-foreground">
+              <strong>Note:</strong> {telegram.suggestedFix}
             </p>
           )}
-          {telegram.workerLastError && (
-            <p className="text-muted-foreground">{telegram.workerLastError}</p>
-          )}
-          {telegram.hasTelethonSession === false && telegram.telegramAccountConnected && (
-            <p className="text-amber-100">
-              Website has Telegram login but <strong>Render needs Telethon session</strong> → Settings →
-              &quot;Sync Render worker session&quot;.
-            </p>
-          )}
-          {telegram.workerDetailLog ? (
-            <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded bg-black/50 p-2 font-mono text-[10px] text-muted-foreground">
+          {telegram?.workerDetailLog && (
+            <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded bg-black/50 p-2 font-mono text-[10px] text-muted-foreground">
               {telegram.workerDetailLog}
             </pre>
-          ) : (
-            <p className="text-muted-foreground">
-              Deploy latest Vercel + Render, then click Refresh above. Open your Render URL +{" "}
-              <code className="bg-muted px-1 rounded">/health</code> — read{" "}
-              <code className="bg-muted px-1 rounded">waitReason</code> and{" "}
-              <code className="bg-muted px-1 rounded">detailLog</code>.
-            </p>
           )}
-          <p className="text-muted-foreground">
-            Full details: <strong>Settings</strong> → Worker & monitoring (scroll down). Render: Logs with{" "}
-            <code className="bg-muted px-1 rounded">[session]</code> lines.
-          </p>
         </div>
       )}
-      {!workerOk && !telegram?.workerWaiting && (
-        <div className="mt-3 text-xs text-amber-400/90 space-y-1">
-          <p>Worker offline? Check Render deploy + matching secrets.</p>
+      {!workerOk && !workerWaiting && (
+        <div className="mt-3 text-xs text-amber-400/90">
+          <p>Worker offline — check Render is deployed and secrets match Vercel.</p>
         </div>
       )}
       {workerOk && (
