@@ -44,7 +44,26 @@ Confirm the new build: open your site → hard refresh (`Ctrl+Shift+R`) or incog
 
 ---
 
-## 1) Fix your current Vercel error
+## 1) Build error: `cd: web: No such file or directory`
+
+Your Vercel **Root Directory** is already **`web`**, but **Build Command** in the dashboard still says `cd web && ...`. Inside `web/`, there is no `web/` folder — the build fails.
+
+### Fix in Vercel → Settings → Build and Development Settings
+
+| Setting | Value (Root Directory = **web**) |
+|---------|----------------------------------|
+| Root Directory | `web` |
+| Build Command | **empty** or `npm run build` only |
+| Install Command | **empty** or `npm install` only |
+| Output Directory | **empty** |
+
+**Remove** any override like `cd web && npm install && npm run build`.
+
+Redeploy. The repo’s `web/vercel.json` uses `npm install` + `npm run build` (no `cd web`).
+
+---
+
+## 2) Deploy error: `web/web/.next` not found
 
 Your build completed, but deploy failed with:
 
