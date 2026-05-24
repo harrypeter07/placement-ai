@@ -72,8 +72,14 @@ export function convertGramJsStringToTelethonString(gramjs: string): string | nu
   return null;
 }
 
+function readGramJsSaveString(client: TelegramClient): string {
+  const save = (client.session as unknown as { save?: () => unknown }).save;
+  const raw = typeof save === "function" ? save.call(client.session) : "";
+  return typeof raw === "string" ? raw.trim() : String(raw || "").trim();
+}
+
 export function exportTelethonSessionString(client: TelegramClient): string | null {
-  const gramjsSave = String(client.session.save?.() || "").trim();
+  const gramjsSave = readGramJsSaveString(client);
 
   const sess = client.session as unknown;
   const authKey = extractAuthKeyBuffer(sess);
