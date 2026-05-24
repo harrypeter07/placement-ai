@@ -6,6 +6,7 @@ import { requireAuth } from "@/lib/api-auth";
 import { getMemoryHeartbeat } from "@/lib/worker-heartbeat-store";
 import { TelegramWorkerSession } from "@/models/TelegramWorkerSession";
 import { buildTelegramWorkerDiagnostics } from "@/lib/telegram-worker-diagnostics";
+import { isValidTelethonSessionString } from "@/lib/telegram-telethon-session";
 
 export const runtime = "nodejs";
 
@@ -84,8 +85,9 @@ export async function GET() {
         .select("+sessionString +telethonSessionString")
         .lean();
       telegramAccountConnected = !!sessionDoc?.sessionString;
-      const th = sessionDoc?.telethonSessionString?.trim() || "";
-      hasTelethonSession = th.length >= 40 && th.startsWith("1");
+      hasTelethonSession = isValidTelethonSessionString(
+        sessionDoc?.telethonSessionString
+      );
     }
 
     const workerOnline =

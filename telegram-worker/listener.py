@@ -1,4 +1,5 @@
 import asyncio
+import binascii
 import json
 import os
 import struct
@@ -53,17 +54,38 @@ _worker_status: dict[str, str | int] = {
 _last_detail_log: list[str] = []
 
 
-def is_valid_telethon_string_session(session_str: str) -> bool:
-    """Reject GramJS sessions (wrong unpack size) before Telethon loads them."""
+TELETHON_IPV4_BODY_LEN = 352
+TELETHON_PAYLOAD_LEN = 263
+
+
+def _pad_urlsafe_b64(body: str) -> str:
+    pad = (-len(body)) % 4
+    return body + ("=" * pad)
+
+
+def normalize_telethon_session_string(session_str: str) -> str:
+    """Add missing base64 padding so Telethon StringSession.decode succeeds."""
     s = (session_str or "").strip()
-    if not s or len(s) < 40:
-        return False
+    if not s.startswith("1") or len(s) < 2:
+        return s
+    body = s[1:]
+    return "1" + _pad_urlsafe_b64(body)
+
+
+def is_valid_telethon_string_session(session_str: str) -> bool:
+    """Telethon IPv4 StringSession: version '1' + exactly 352 url-safe base64 chars."""
+    s = (session_str or "").strip()
     if not s.startswith("1"):
+        return False
+    body = s[1:]
+    if len(body) != TELETHON_IPV4_BODY_LEN:
         return False
     try:
         import base64
 
-        raw = base64.urlsafe_b64decode(s[1:] + "==")
+        raw = base64.urlsafe_b64decode(_pad_urlsafe_b64(body))
+        if len(raw) != TELETHON_PAYLOAD_LEN:
+            return False
         struct.unpack(">B4sH256s", raw)
         return True
     except Exception:
@@ -141,6 +163,17 @@ async def fetch_session_string(verbose: bool = True) -> str:
                         verbose,
                     )
 
+                    if telethon and legacy and telethon == legacy:
+                        _log_diag(
+                            "BLOCKER: telethonSessionString is a copy of GramJS session (invalid)",
+                            verbose,
+                        )
+                        _log_diag(
+                            "Fix: Vercel Settings → Sync Render worker session (after redeploy)",
+                            verbose,
+                        )
+                        return ""
+
                     s = telethon if is_valid_telethon_string_session(telethon) else ""
                     if not s and is_valid_telethon_string_session(legacy):
                         s = legacy
@@ -191,7 +224,8 @@ async def try_connect_telegram() -> TelegramClient | None:
             return None
         try:
             _log_diag("Connecting Telethon client…", True)
-            c = TelegramClient(StringSession(session_str), API_ID, API_HASH)
+            normalized = normalize_telethon_session_string(session_str)
+            c = TelegramClient(StringSession(normalized), API_ID, API_HASH)
             await c.connect()
             if await c.is_user_authorized():
                 me = await c.get_me()
@@ -205,6 +239,12 @@ async def try_connect_telegram() -> TelegramClient | None:
             _log_diag("Fix: reconnect Telegram in Vercel Settings", True)
         except struct.error as e:
             _log_diag(f"BLOCKER: struct.error loading session — GramJS vs Telethon mismatch: {e}", True)
+        except binascii.Error as e:
+            _log_diag(f"BLOCKER: session base64 invalid (Incorrect padding): {e}", True)
+            _log_diag(
+                "Fix: Vercel Settings → Sync Render worker session (needs 353-char Telethon string)",
+                True,
+            )
         except Exception as e:
             _log_diag(f"BLOCKER: Telethon connect failed: {type(e).__name__}: {e}", True)
 

@@ -6,6 +6,7 @@ import { createTelegramClient } from "@/lib/telegram-gramjs";
 import {
   exportTelethonSessionString,
   isValidTelethonSessionString,
+  sessionsLookIdentical,
 } from "@/lib/telegram-telethon-session";
 
 export const runtime = "nodejs";
@@ -22,12 +23,16 @@ export async function POST() {
       return NextResponse.json({ error: "Connect Telegram in Settings first" }, { status: 400 });
     }
 
-    if (isValidTelethonSessionString(doc.telethonSessionString)) {
+    const existing = doc.telethonSessionString?.trim();
+    if (
+      isValidTelethonSessionString(existing) &&
+      !sessionsLookIdentical(existing, doc.sessionString)
+    ) {
       return NextResponse.json({
         ok: true,
         alreadySynced: true,
         message: "Render worker session already synced",
-        telethonLength: doc.telethonSessionString?.length ?? 0,
+        telethonLength: existing?.length ?? 0,
       });
     }
 
@@ -41,7 +46,11 @@ export async function POST() {
       }
 
       const telethonSessionString = exportTelethonSessionString(client);
-      if (!telethonSessionString || !isValidTelethonSessionString(telethonSessionString)) {
+      if (
+        !telethonSessionString ||
+        !isValidTelethonSessionString(telethonSessionString) ||
+        sessionsLookIdentical(telethonSessionString, doc.sessionString)
+      ) {
         return NextResponse.json(
           {
             error:

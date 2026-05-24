@@ -57,16 +57,50 @@ export function exportTelethonSessionString(client: TelegramClient): string | nu
   payload.writeUInt16BE(port, 5);
   authKey.copy(payload, 7);
 
-  return `1${payload.toString("base64url")}`;
+  // Match Telethon StringSession.encode: urlsafe base64 WITH padding (body length 352 for IPv4)
+  const b64 = payload
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_");
+  return `1${b64}`;
 }
+
+function decodeTelethonBody(body: string): Buffer | null {
+  const pad = (4 - (body.length % 4)) % 4;
+  const padded = pad ? body + "=".repeat(pad) : body;
+  try {
+    return Buffer.from(padded, "base64url");
+  } catch {
+    return null;
+  }
+}
+
+/** Telethon IPv4 body length after leading `1` (includes base64 padding). */
+export const TELETHON_IPV4_BODY_LEN = 352;
 
 export function isValidTelethonSessionString(s: string | undefined | null): boolean {
   const t = (s || "").trim();
-  if (t.length < 40 || !t.startsWith("1")) return false;
-  try {
-    const raw = Buffer.from(t.slice(1), "base64url");
-    return raw.length >= 263;
-  } catch {
-    return false;
-  }
+  if (!t.startsWith("1")) return false;
+  const body = t.slice(1);
+  if (body.length !== TELETHON_IPV4_BODY_LEN) return false;
+  const raw = decodeTelethonBody(body);
+  return !!raw && raw.length === 263;
+}
+
+export function sessionsLookIdentical(
+  telethon: string | undefined | null,
+  gramjs: string | undefined | null
+): boolean {
+  const a = (telethon || "").trim();
+  const b = (gramjs || "").trim();
+  return !!a && !!b && a === b;
+}
+
+/** Add missing `=` so Telethon StringSession.decode() accepts legacy exports */
+export function normalizeTelethonSessionString(s: string): string {
+  const t = s.trim();
+  if (!t.startsWith("1")) return t;
+  const body = t.slice(1);
+  const pad = (4 - (body.length % 4)) % 4;
+  return pad ? `1${body}${"=".repeat(pad)}` : t;
 }
