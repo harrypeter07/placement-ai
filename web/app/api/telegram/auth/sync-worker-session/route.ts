@@ -4,9 +4,10 @@ import { requireAuth } from "@/lib/api-auth";
 import { TelegramWorkerSession } from "@/models/TelegramWorkerSession";
 import { createTelegramClient } from "@/lib/telegram-gramjs";
 import {
+  convertGramJsStringToTelethonString,
   exportTelethonSessionString,
   isValidTelethonSessionString,
-  sessionsLookIdentical,
+  telethonSessionForWorker,
 } from "@/lib/telegram-telethon-session";
 
 export const runtime = "nodejs";
@@ -24,15 +25,17 @@ export async function POST() {
     }
 
     const existing = doc.telethonSessionString?.trim();
+    const fromGramjs = convertGramJsStringToTelethonString(doc.sessionString);
     if (
+      existing &&
       isValidTelethonSessionString(existing) &&
-      !sessionsLookIdentical(existing, doc.sessionString)
+      telethonSessionForWorker(existing, doc.sessionString)
     ) {
       return NextResponse.json({
         ok: true,
         alreadySynced: true,
         message: "Render worker session already synced",
-        telethonLength: existing?.length ?? 0,
+        telethonLength: existing.length,
       });
     }
 
@@ -45,11 +48,13 @@ export async function POST() {
         );
       }
 
-      const telethonSessionString = exportTelethonSessionString(client);
+      const telethonSessionString =
+        exportTelethonSessionString(client) ||
+        convertGramJsStringToTelethonString(doc.sessionString);
       if (
         !telethonSessionString ||
         !isValidTelethonSessionString(telethonSessionString) ||
-        sessionsLookIdentical(telethonSessionString, doc.sessionString)
+        !telethonSessionForWorker(telethonSessionString, doc.sessionString)
       ) {
         return NextResponse.json(
           {

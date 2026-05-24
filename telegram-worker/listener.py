@@ -14,6 +14,7 @@ from dotenv import load_dotenv
 from ai_parser import parse_placement_message, is_duplicate
 from database import save_deadline
 from session_config import get_session_path
+from session_convert import gramjs_string_to_telethon
 
 load_dotenv()
 
@@ -164,12 +165,23 @@ async def fetch_session_string(verbose: bool = True) -> str:
                     )
 
                     if telethon and legacy and telethon == legacy:
+                        if is_valid_telethon_string_session(legacy):
+                            s = normalize_telethon_session_string(legacy)
+                            _log_diag(
+                                "Using session (GramJS/Telethon share same valid pack)",
+                                verbose,
+                            )
+                            return s
+                        converted = gramjs_string_to_telethon(legacy)
+                        if converted and is_valid_telethon_string_session(converted):
+                            _log_diag("Converted GramJS session to Telethon format", verbose)
+                            return normalize_telethon_session_string(converted)
                         _log_diag(
-                            "BLOCKER: telethonSessionString is a copy of GramJS session (invalid)",
+                            "BLOCKER: session is GramJS-only (not Telethon pack)",
                             verbose,
                         )
                         _log_diag(
-                            "Fix: Vercel Settings → Sync Render worker session (after redeploy)",
+                            "Fix: Vercel Settings → Sync Render worker session",
                             verbose,
                         )
                         return ""

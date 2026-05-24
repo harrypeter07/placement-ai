@@ -41,28 +41,73 @@ function readDc(session: Record<string, unknown>) {
  * Build a Telethon-compatible StringSession from a logged-in GramJS client.
  * Render worker requires this format (GramJS session.save() is not compatible).
  */
+function decodeGramJsBody(body: string): Buffer | null {
+  const pad = (4 - (body.length % 4)) % 4;
+  const padded = body + "=".repeat(pad);
+  try {
+    return Buffer.from(padded.replace(/-/g, "+").replace(/_/g, "/"), "base64");
+  } catch {
+    try {
+      return Buffer.from(padded, "base64url");
+    } catch {
+      return null;
+    }
+  }
+}
+
+/** Re-encode GramJS session bytes as Telethon url-safe StringSession (353 chars total). */
+export function convertGramJsStringToTelethonString(gramjs: string): string | null {
+  const t = gramjs.trim();
+  if (!t.startsWith("1") || t.length < 40) return null;
+  const raw = decodeGramJsBody(t.slice(1));
+  if (!raw || raw.length !== 263) return null;
+
+  const b64 = raw.toString("base64").replace(/\+/g, "-").replace(/\//g, "_");
+  const pad = (4 - (b64.length % 4)) % 4;
+  const body = b64 + "=".repeat(pad);
+  if (body.length !== TELETHON_IPV4_BODY_LEN) return null;
+
+  const out = `1${body}`;
+  if (isValidTelethonSessionString(out)) return out;
+  return null;
+}
+
 export function exportTelethonSessionString(client: TelegramClient): string | null {
+  const gramjsSave = String(client.session.save?.() || "").trim();
+
   const sess = client.session as unknown;
   const authKey = extractAuthKeyBuffer(sess);
-  if (!authKey) return null;
+  if (authKey) {
+    const s = sess as Record<string, unknown>;
+    const { dcId, serverAddress, port } = readDc(s);
+    const ipParts = serverAddress.split(".").map((p) => Number(p));
+    if (ipParts.length === 4 && !ipParts.some((n) => Number.isNaN(n))) {
+      const payload = Buffer.alloc(1 + 4 + 2 + 256);
+      payload.writeUInt8(dcId, 0);
+      ipParts.forEach((b, i) => payload.writeUInt8(b, 1 + i));
+      payload.writeUInt16BE(port, 5);
+      authKey.copy(payload, 7);
 
-  const s = sess as Record<string, unknown>;
-  const { dcId, serverAddress, port } = readDc(s);
-  const ipParts = serverAddress.split(".").map((p) => Number(p));
-  if (ipParts.length !== 4 || ipParts.some((n) => Number.isNaN(n))) return null;
+      const b64 = payload
+        .toString("base64")
+        .replace(/\+/g, "-")
+        .replace(/\//g, "_");
+      const pad = (4 - (b64.length % 4)) % 4;
+      const body = b64 + "=".repeat(pad);
+      const fromKey = `1${body}`;
+      if (
+        isValidTelethonSessionString(fromKey) &&
+        (!gramjsSave || fromKey !== gramjsSave)
+      ) {
+        return fromKey;
+      }
+    }
+  }
 
-  const payload = Buffer.alloc(1 + 4 + 2 + 256);
-  payload.writeUInt8(dcId, 0);
-  ipParts.forEach((b, i) => payload.writeUInt8(b, 1 + i));
-  payload.writeUInt16BE(port, 5);
-  authKey.copy(payload, 7);
-
-  // Match Telethon StringSession.encode: urlsafe base64 WITH padding (body length 352 for IPv4)
-  const b64 = payload
-    .toString("base64")
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_");
-  return `1${b64}`;
+  if (gramjsSave) {
+    return convertGramJsStringToTelethonString(gramjsSave);
+  }
+  return null;
 }
 
 function decodeTelethonBody(body: string): Buffer | null {
@@ -94,6 +139,18 @@ export function sessionsLookIdentical(
   const a = (telethon || "").trim();
   const b = (gramjs || "").trim();
   return !!a && !!b && a === b;
+}
+
+export function telethonSessionForWorker(
+  telethon: string | undefined | null,
+  gramjs: string | undefined | null
+): string | null {
+  const th = (telethon || "").trim();
+  const gj = (gramjs || "").trim();
+  if (th && isValidTelethonSessionString(th)) return th;
+  if (gj && isValidTelethonSessionString(gj)) return gj;
+  const converted = gj ? convertGramJsStringToTelethonString(gj) : null;
+  return converted;
 }
 
 /** Add missing `=` so Telethon StringSession.decode() accepts legacy exports */
