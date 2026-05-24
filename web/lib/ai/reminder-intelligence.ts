@@ -1,7 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { IStudentPreferences } from "@/models/StudentPreferences";
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+import { getGeminiApiKey, isGeminiConfigured } from "@/lib/ai/gemini-env";
 
 export type ReminderStyle = "gentle" | "balanced" | "aggressive";
 
@@ -65,7 +64,7 @@ export async function analyzePlacementForReminders(
 ): Promise<ReminderAnalysisResult> {
   const sensitivity = prefs?.ai?.urgencySensitivity || "medium";
 
-  if (!process.env.GEMINI_API_KEY) {
+  if (!isGeminiConfigured()) {
     const urgent = /tonight|today|hours?|closing|last date|eod|11:59|23:59/i.test(message);
     const offsets = urgent ? [6 * 60, 60, 30, 15] : FALLBACK.suggestedOffsetsMinutes;
     const urgency = urgent ? "critical" : "medium";
@@ -111,6 +110,9 @@ Message:
 ${message.slice(0, 6000)}`;
 
   try {
+    const apiKey = getGeminiApiKey();
+    if (!apiKey) return { ...FALLBACK, aiSummary: message.slice(0, 200) };
+    const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     const result = await model.generateContent(prompt);
     const text = result.response.text().replace(/```json\n?|\n?```/g, "").trim();

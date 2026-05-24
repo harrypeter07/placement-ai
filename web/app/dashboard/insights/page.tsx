@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Sparkles, Settings2, RefreshCw } from "lucide-react";
 import { DashboardHeader } from "@/components/dashboard/sidebar";
@@ -22,6 +22,7 @@ export default function InsightsPage() {
   const [sinceDate, setSinceDate] = useState("");
   const [notes, setNotes] = useState("");
   const [analyzedCount, setAnalyzedCount] = useState<number | undefined>();
+  const autoRan = useRef(false);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -33,26 +34,15 @@ export default function InsightsPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  useEffect(() => {
-    load();
-    fetch("/api/settings")
-      .then((r) => r.json())
-      .then((p) => {
-        if (p.telegram?.insightMessageCount) setMessageLimit(p.telegram.insightMessageCount);
-        if (p.telegram?.insightSinceDate) {
-          setSinceDate(new Date(p.telegram.insightSinceDate).toISOString().slice(0, 10));
-        }
-      });
-  }, [load]);
-
-  async function runAnalysis() {
+  const runAnalysis = useCallback(
+    async (limitOverride?: number) => {
     setRunning(true);
     try {
       const res = await fetch("/api/telegram/insights", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messageLimit,
+          messageLimit: limitOverride ?? messageLimit,
           sinceDate: sinceDate || undefined,
           applyMode: "preview",
         }),
@@ -63,15 +53,44 @@ export default function InsightsPage() {
       setInsights(list);
       setNotes(data.processingNotes || "");
       setAnalyzedCount(data.analyzedMessageCount);
-      toast.success(
-        `Generated ${list.length} insight(s) from ${data.analyzedMessageCount ?? "?"} messages — review below`
-      );
+      if (data.geminiConfigured === false) {
+        toast.warning(
+          data.processingNotes || "Gemini API key not set on server — using keyword analysis only",
+          { duration: 8000 }
+        );
+      } else {
+        toast.success(
+          `Generated ${list.length} insight(s) from ${data.analyzedMessageCount ?? "?"} messages — review below`
+        );
+      }
+      if (data.messagesFetched > 0) {
+        toast.message(`Loaded ${data.messagesFetched} message(s) from Telegram`);
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not analyze");
     } finally {
       setRunning(false);
     }
-  }
+  },
+    [messageLimit, sinceDate]
+  );
+
+  useEffect(() => {
+    load();
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((p) => {
+        const limit = p.telegram?.insightMessageCount ?? 25;
+        setMessageLimit(limit);
+        if (p.telegram?.insightSinceDate) {
+          setSinceDate(new Date(p.telegram.insightSinceDate).toISOString().slice(0, 10));
+        }
+        if (p.telegram?.autoInsights !== false && !autoRan.current) {
+          autoRan.current = true;
+          void runAnalysis(limit);
+        }
+      });
+  }, [load, runAnalysis]);
 
   async function applyIds(ids: string[], pinToOverview: boolean) {
     setApplying(true);
@@ -133,7 +152,7 @@ export default function InsightsPage() {
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <LoadingButton variant="glow" loading={running} onClick={() => void runAnalysis()}>
+              <LoadingButton variant="glow" loading={running} onClick={() => void runAnalysis(messageLimit)}>
                 <Sparkles className="h-4 w-4 mr-1" /> Analyze monitored groups
               </LoadingButton>
               <Button variant="outline" size="sm" onClick={load}>

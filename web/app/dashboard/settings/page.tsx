@@ -554,7 +554,8 @@ export default function SettingsPage() {
               <CardHeader>
                 <CardTitle>Telegram AI monitoring</CardTitle>
                 <CardDescription>
-                  How many recent messages Gemini reads per monitored group. Toggle groups on the Notifications page.
+                  How many recent messages to load and analyze per monitored group. Saving settings applies on the next
+                  analysis (messages are fetched from Telegram automatically). Toggle groups on the Notifications page.
                 </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -620,6 +621,10 @@ export default function SettingsPage() {
                     nest("telegram", { ...(prefs.telegram || { monitoredGroupIds: [] }), insightPinToOverview: v })
                   }
                 />
+                <p className="text-xs text-muted-foreground rounded-lg border border-white/10 bg-white/5 p-3">
+                  Gemini AI: set <code className="text-primary">GEMINI_API_KEY</code> in Vercel environment variables
+                  (Production + Preview), then redeploy. Without it, analysis uses basic keyword matching only.
+                </p>
                 <PrefSwitchRow label="Auto-run insights on monitored groups" checked={prefs.telegram?.autoInsights ?? true} onChange={(v) => nest("telegram", { ...(prefs.telegram || { insightMessageCount: 25, monitoredGroupIds: [] }), autoInsights: v })} />
                 <PrefSwitchRow label="Auto-create deadlines from insights" checked={prefs.telegram?.autoCreateDeadlines ?? true} onChange={(v) => nest("telegram", { ...(prefs.telegram || { insightMessageCount: 25, monitoredGroupIds: [] }), autoCreateDeadlines: v })} />
                 <PrefSwitchRow label="Auto-create reminders from insights" checked={prefs.telegram?.autoCreateReminders ?? true} onChange={(v) => nest("telegram", { ...(prefs.telegram || { insightMessageCount: 25, monitoredGroupIds: [] }), autoCreateReminders: v })} />

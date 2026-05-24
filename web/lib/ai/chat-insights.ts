@@ -1,7 +1,11 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { IStudentPreferences } from "@/models/StudentPreferences";
+import { GEMINI_MISSING_HINT, getGeminiApiKey, isGeminiConfigured } from "@/lib/ai/gemini-env";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+function getGenAI() {
+  const key = getGeminiApiKey();
+  return key ? new GoogleGenerativeAI(key) : null;
+}
 
 export type ChatMessageInput = {
   messageId: string;
@@ -37,6 +41,8 @@ export type ChatInsightItem = {
 export type ChatInsightsResult = {
   insights: ChatInsightItem[];
   processingNotes: string;
+  usedGemini?: boolean;
+  geminiConfigured?: boolean;
 };
 
 function clampOffsets(arr: unknown): number[] {
@@ -122,7 +128,7 @@ function heuristicInsights(
 
   return {
     insights: items.slice(0, 12),
-    processingNotes: "Heuristic analysis (Gemini API key not set).",
+    processingNotes: `Keyword analysis only — Gemini not configured. ${GEMINI_MISSING_HINT}`,
   };
 }
 
@@ -139,7 +145,9 @@ export async function analyzeChatMessagesForInsights(
     return { insights: [], processingNotes: "No messages in monitored groups." };
   }
 
-  if (!process.env.GEMINI_API_KEY) {
+  const geminiConfigured = isGeminiConfigured();
+  const genAI = getGenAI();
+  if (!geminiConfigured || !genAI) {
     const merged: ChatInsightItem[] = [];
     for (const g of groups) {
       const r = heuristicInsights(g.groupId, g.title, g.messages);
@@ -149,7 +157,12 @@ export async function analyzeChatMessagesForInsights(
     merged.forEach((it, i) => {
       it.rank = i + 1;
     });
-    return { insights: merged.slice(0, 15), processingNotes: "Heuristic fallback." };
+    return {
+      insights: merged.slice(0, 15),
+      processingNotes: `Analyzed ${flatCount} message(s) with keyword rules only. ${GEMINI_MISSING_HINT}`,
+      usedGemini: false,
+      geminiConfigured: false,
+    };
   }
 
   const transcript = groups
@@ -255,13 +268,24 @@ ${transcript.slice(0, 28000)}`;
 
     return {
       insights,
-      processingNotes: String(parsed.processingNotes || "Gemini analysis complete."),
+      processingNotes: String(
+        parsed.processingNotes || `Gemini analyzed ${flatCount} message(s) across ${groups.length} group(s).`
+      ),
+      usedGemini: true,
+      geminiConfigured: true,
     };
-  } catch {
-    return heuristicInsights(
+  } catch (err) {
+    const fallback = heuristicInsights(
       groups[0]?.groupId || "",
       groups[0]?.title || "Group",
       groups.flatMap((g) => g.messages)
     );
+    const reason = err instanceof Error ? err.message : "API error";
+    return {
+      ...fallback,
+      processingNotes: `Gemini failed (${reason}). Using keyword fallback for ${flatCount} message(s).`,
+      usedGemini: false,
+      geminiConfigured: true,
+    };
   }
 }

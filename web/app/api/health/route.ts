@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
 import mongoose from "mongoose";
+import { isGeminiConfigured } from "@/lib/ai/gemini-env";
 
 export const runtime = "nodejs";
 
@@ -13,7 +14,7 @@ export async function GET() {
     env: {
       mongodb: !!process.env.MONGODB_URI,
       nextauth: !!process.env.NEXTAUTH_SECRET,
-      gemini: !!process.env.GEMINI_API_KEY,
+      gemini: isGeminiConfigured(),
       telegramWorkerSecret: !!process.env.TELEGRAM_WORKER_SECRET,
     },
   };

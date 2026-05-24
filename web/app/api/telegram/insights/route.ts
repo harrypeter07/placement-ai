@@ -11,6 +11,8 @@ import {
   applyChatInsightsForUser,
   storeDraftInsights,
 } from "@/lib/ai/apply-chat-insights";
+import { isGeminiConfigured } from "@/lib/ai/gemini-env";
+import { ensureMessagesForGroups } from "@/lib/telegram-ensure-messages";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -98,6 +100,15 @@ export async function POST(req: Request) {
         : null;
 
     const groups = await TelegramGroup.find({ groupId: { $in: monitored } }).lean();
+
+    const fetchResult = await ensureMessagesForGroups(monitored, limit, since);
+    const fetchNote =
+      fetchResult.fetched > 0
+        ? `Loaded ${fetchResult.fetched} message(s) from Telegram before analysis. `
+        : fetchResult.errors.length > 0
+          ? `Could not refresh from Telegram: ${fetchResult.errors[0]}. Using stored messages. `
+          : "";
+
     const payload: {
       groupId: string;
       title: string;
@@ -146,6 +157,7 @@ export async function POST(req: Request) {
     }
 
     const analysis = await analyzeChatMessagesForInsights(withMessages, prefs);
+    const processingNotes = `${fetchNote}${analysis.processingNotes || ""}`.trim();
 
     if (mode === "preview" || mode === "none") {
       await storeDraftInsights(user.id, analysis.insights, targetGroupId);
@@ -161,12 +173,16 @@ export async function POST(req: Request) {
 
       return NextResponse.json({
         ...analysis,
+        processingNotes,
         insights: stored,
         proposed: analysis.insights,
         created: { deadlines: 0, reminders: 0, insights: stored.length },
         analyzedMessageCount,
         analyzedGroupId: targetGroupId,
         applyMode: mode,
+        messagesFetched: fetchResult.fetched,
+        geminiConfigured: isGeminiConfigured(),
+        usedGemini: analysis.usedGemini ?? false,
       });
     }
 
@@ -184,6 +200,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       ...analysis,
+      processingNotes,
       created,
       insights: stored,
       proposed: analysis.insights,
@@ -191,6 +208,9 @@ export async function POST(req: Request) {
       analyzedGroupId: targetGroupId,
       applyMode: "all",
       results: created.results,
+      messagesFetched: fetchResult.fetched,
+      geminiConfigured: isGeminiConfigured(),
+      usedGemini: analysis.usedGemini ?? false,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Error";

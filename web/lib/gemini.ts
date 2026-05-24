@@ -1,7 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { ExtractedPlacement } from "@/types";
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
+import { getGeminiApiKey } from "@/lib/ai/gemini-env";
 
 const EXTRACTION_PROMPT = `You are an expert placement opportunity parser for Indian college placement Telegram groups.
 
@@ -41,11 +40,13 @@ export async function extractPlacementFromText(text: string): Promise<ExtractedP
     confidence: 0,
   };
 
-  if (!process.env.GEMINI_API_KEY) {
+  const apiKey = getGeminiApiKey();
+  if (!apiKey) {
     return preprocessWithRegex(text);
   }
 
   try {
+    const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     const result = await model.generateContent(EXTRACTION_PROMPT + text);
     const response = result.response.text();
@@ -109,9 +110,11 @@ export async function analyzeResume(text: string): Promise<{
     ],
   };
 
-  if (!process.env.GEMINI_API_KEY) return defaultResult;
+  const apiKey = getGeminiApiKey();
+  if (!apiKey) return defaultResult;
 
   try {
+    const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     const prompt = `Analyze this resume text and return JSON only:
 {

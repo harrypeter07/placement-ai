@@ -88,6 +88,7 @@ export default function NotificationsPage() {
   const [applyingInsights, setApplyingInsights] = useState(false);
   const [analyzeLimit, setAnalyzeLimit] = useState(25);
   const insightsRan = useRef(false);
+  const prefsLoaded = useRef(false);
 
   const {
     data: groups,
@@ -131,11 +132,11 @@ export default function NotificationsPage() {
     if (Array.isArray(data)) setSystemNotifs(data);
   }, []);
 
-  const loadMessages = useCallback(async (groupId: string, background = false) => {
+  const loadMessages = useCallback(async (groupId: string, background = false, limit = 80) => {
     if (!background) setLoadingMessages(true);
     try {
       const res = await fetch(
-        `/api/telegram/messages?groupId=${encodeURIComponent(groupId)}&limit=80`
+        `/api/telegram/messages?groupId=${encodeURIComponent(groupId)}&limit=${Math.min(100, limit)}`
       );
       const data = await res.json();
       setMessages(Array.isArray(data) ? data : []);
@@ -146,6 +147,17 @@ export default function NotificationsPage() {
 
   useEffect(() => {
     void loadSystemNotifs();
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((p) => {
+        if (p?.telegram?.insightMessageCount) {
+          setAnalyzeLimit(p.telegram.insightMessageCount);
+        }
+        prefsLoaded.current = true;
+      })
+      .catch(() => {
+        prefsLoaded.current = true;
+      });
   }, [loadSystemNotifs]);
 
   useEffect(() => {
@@ -221,7 +233,16 @@ export default function NotificationsPage() {
             `${list.length} insight(s) ready — review titles, deadlines & reminder times below, then Apply`
           );
         }
-        if (data.processingNotes) toast.message(data.processingNotes);
+        if (data.processingNotes) {
+          if (data.geminiConfigured === false) {
+            toast.warning(data.processingNotes, { duration: 8000 });
+          } else {
+            toast.message(data.processingNotes);
+          }
+        }
+        if (data.messagesFetched > 0) {
+          toast.message(`Fetched ${data.messagesFetched} message(s) from Telegram`);
+        }
 
         if (groupId) {
           setGroupInsights(list);
@@ -237,17 +258,18 @@ export default function NotificationsPage() {
   );
 
   const fetchMessagesFromTelegram = useCallback(
-    async (groupId: string) => {
+    async (groupId: string, limit?: number) => {
+      const cap = Math.min(100, Math.max(5, limit ?? analyzeLimit));
       setFetchingMessages(true);
       try {
         const res = await fetch("/api/telegram/messages/fetch", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ groupId, limit: 60 }),
+          body: JSON.stringify({ groupId, limit: cap }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Fetch failed");
-        await loadMessages(groupId);
+        await loadMessages(groupId, false, cap);
         await refreshGroups();
         toast.success(data.message || `Loaded ${data.fetched} messages`);
       } catch (e) {
@@ -256,7 +278,7 @@ export default function NotificationsPage() {
         setFetchingMessages(false);
       }
     },
-    [loadMessages, refreshGroups]
+    [loadMessages, refreshGroups, analyzeLimit]
   );
 
   useEffect(() => {
@@ -320,7 +342,9 @@ export default function NotificationsPage() {
         )
       );
       toast.success(enabled ? "Monitoring on" : "Monitoring off");
-      if (enabled) void runInsights();
+      if (enabled) {
+        void fetchMessagesFromTelegram(groupId, analyzeLimit).then(() => runInsights(groupId));
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not update monitoring");
     } finally {
@@ -347,10 +371,23 @@ export default function NotificationsPage() {
     setSelectedGroupId(groupId);
     setMessages([]);
     setGroupInsights([]);
-    void loadMessages(groupId);
-    void fetch(`/api/telegram/insights?groupId=${encodeURIComponent(groupId)}`)
-      .then((r) => r.json())
-      .then((d) => setGroupInsights(Array.isArray(d) ? d : []));
+    void (async () => {
+      const g = (groups || []).find((x) => x.groupId === groupId);
+      await loadMessages(groupId, false, analyzeLimit);
+      void fetch(`/api/telegram/insights?groupId=${encodeURIComponent(groupId)}`)
+        .then((r) => r.json())
+        .then((d) => setGroupInsights(Array.isArray(d) ? d : []));
+
+      if (g?.monitoringEnabled) {
+        await fetchMessagesFromTelegram(groupId, analyzeLimit);
+        const prefsRes = await fetch("/api/settings");
+        const prefs = await prefsRes.json();
+        if (prefs?.telegram?.autoInsights !== false) {
+          const mode = prefs?.telegram?.insightsApplyMode === "all" ? "all" : "preview";
+          await runInsights(groupId, mode);
+        }
+      }
+    })();
   }
 
   function backToGroups() {
