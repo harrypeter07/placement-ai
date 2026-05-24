@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Sparkles, Settings2, RefreshCw } from "lucide-react";
 import { DashboardHeader } from "@/components/dashboard/sidebar";
 import { InsightsAnalysisPanel, type InsightRow } from "@/components/telegram/insights-analysis-panel";
+import { insightIdString } from "@/lib/insight-utils";
 import { LoadingButton } from "@/components/ui/loading-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -92,33 +93,57 @@ export default function InsightsPage() {
       });
   }, [load, runAnalysis]);
 
-  async function applyIds(ids: string[], pinToOverview: boolean) {
+  async function setDeadlineIds(ids: string[], pinToOverview: boolean) {
+    const clean = ids.map(insightIdString).filter(Boolean);
+    if (!clean.length) {
+      toast.error("No valid deadlines to set");
+      return;
+    }
     setApplying(true);
     try {
       const res = await fetch("/api/telegram/insights/apply", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          insightIds: ids,
+          insightIds: clean,
           createDeadlines: true,
           createReminders: true,
           pinToOverview,
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Apply failed");
+      if (!res.ok) throw new Error(data.error || "Failed");
       toast.success(
-        `Applied ${data.applied} insight(s) — ${data.created?.deadlines ?? 0} deadline(s), ${data.created?.reminders ?? 0} reminder(s)`
+        `Set ${data.applied} deadline(s) — ${data.created?.reminders ?? 0} reminder(s)`
       );
       load();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Apply failed");
+      toast.error(e instanceof Error ? e.message : "Failed");
     } finally {
       setApplying(false);
     }
   }
 
-  const draftIds = insights.filter((i) => i.status === "draft").map((i) => i._id);
+  async function dismissIds(ids: string[]) {
+    const clean = ids.map(insightIdString).filter(Boolean);
+    if (!clean.length) return;
+    setApplying(true);
+    try {
+      const res = await fetch("/api/telegram/insights/dismiss", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ insightIds: clean }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Dismiss failed");
+      toast.message(`Dismissed ${data.dismissed} item(s)`);
+      load();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Dismiss failed");
+    } finally {
+      setApplying(false);
+    }
+  }
 
   return (
     <>
@@ -175,8 +200,9 @@ export default function InsightsPage() {
             analyzedMessageCount={analyzedCount}
             processingNotes={notes}
             applying={applying}
-            onApplyAll={({ pinToOverview }) => applyIds(draftIds, pinToOverview)}
-            onApplySelected={(ids, { pinToOverview }) => applyIds(ids, pinToOverview)}
+            onSetDeadline={(id, { pinToOverview }) => setDeadlineIds([id], pinToOverview)}
+            onSetAllDeadlines={(ids, { pinToOverview }) => setDeadlineIds(ids, pinToOverview)}
+            onDismiss={(ids) => dismissIds(ids)}
           />
         )}
 

@@ -10,7 +10,6 @@ import {
   Users,
   RefreshCw,
   Search,
-  Download,
   Info,
 } from "lucide-react";
 import { TelegramChatMessage } from "@/components/dashboard/telegram-chat-message";
@@ -33,6 +32,7 @@ import {
   InsightsAnalysisPanel,
   type InsightRow,
 } from "@/components/telegram/insights-analysis-panel";
+import { insightIdString } from "@/lib/insight-utils";
 
 interface TelegramGroup {
   _id: string;
@@ -74,12 +74,10 @@ export default function NotificationsPage() {
   const [systemNotifs, setSystemNotifs] = useState<SystemNotif[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [loadingMessages, setLoadingMessages] = useState(false);
-  const [tab, setTab] = useState<"chats" | "insights" | "alerts">("chats");
+  const [tab, setTab] = useState<"chats" | "alerts">("chats");
   const [togglingGroupId, setTogglingGroupId] = useState<string | null>(null);
   const [groupSearch, setGroupSearch] = useState("");
-  const [runningInsights, setRunningInsights] = useState(false);
   const [syncingCatalog, setSyncingCatalog] = useState(false);
-  const [fetchingMessages, setFetchingMessages] = useState(false);
   const [analyzingGroup, setAnalyzingGroup] = useState(false);
   const [groupFilter, setGroupFilter] = useState<"all" | "monitored">("all");
   const [groupInsights, setGroupInsights] = useState<PlacementInsight[]>([]);
@@ -87,7 +85,6 @@ export default function NotificationsPage() {
   const [analyzedMsgCount, setAnalyzedMsgCount] = useState<number | undefined>();
   const [applyingInsights, setApplyingInsights] = useState(false);
   const [analyzeLimit, setAnalyzeLimit] = useState(25);
-  const insightsRan = useRef(false);
   const prefsLoaded = useRef(false);
 
   const {
@@ -107,23 +104,6 @@ export default function NotificationsPage() {
     setCached: (d) => cache.setTelegramGroups(d),
     isFresh: () => cache.isTelegramGroupsFresh(),
     pollMs: 60_000,
-  });
-
-  const {
-    data: insights,
-    loading: loadingInsights,
-    refresh: refreshInsights,
-    setData: setInsights,
-  } = useCachedFetch<PlacementInsight[]>({
-    key: "telegram-insights",
-    fetcher: async () => {
-      const res = await fetch("/api/telegram/insights");
-      const data = await res.json();
-      return Array.isArray(data) ? data : [];
-    },
-    getCached: () => cache.getInsights() as PlacementInsight[] | null,
-    setCached: (d) => cache.setInsights(d),
-    isFresh: () => cache.isInsightsFresh(),
   });
 
   const loadSystemNotifs = useCallback(async () => {
@@ -167,40 +147,75 @@ export default function NotificationsPage() {
     return () => clearInterval(id);
   }, [selectedGroupId, loadMessages]);
 
-  const applyInsightIds = useCallback(
+  const reloadGroupInsights = useCallback(async (groupId: string) => {
+    const res = await fetch(`/api/telegram/insights?groupId=${encodeURIComponent(groupId)}`);
+    const d = await res.json();
+    const list = Array.isArray(d) ? d : [];
+    setGroupInsights(list);
+    return list;
+  }, []);
+
+  const setDeadlineIds = useCallback(
     async (ids: string[], pinToOverview: boolean) => {
+      const clean = ids.map(insightIdString).filter(Boolean);
+      if (!clean.length) {
+        toast.error("This item has no parseable deadline to set");
+        return;
+      }
       setApplyingInsights(true);
       try {
         const res = await fetch("/api/telegram/insights/apply", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            insightIds: ids,
+            insightIds: clean,
             createDeadlines: true,
             createReminders: true,
             pinToOverview,
           }),
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Apply failed");
+        if (!res.ok) throw new Error(data.error || "Failed");
         toast.success(
-          `Applied ${data.applied} — ${data.created?.deadlines ?? 0} deadlines, ${data.created?.reminders ?? 0} reminders`
+          `Set ${data.applied} deadline(s) — ${data.created?.reminders ?? 0} reminder(s)`
         );
         cache.invalidateDeadlines();
         cache.invalidateReminders();
-        void refreshInsights();
+        if (selectedGroupId) await reloadGroupInsights(selectedGroupId);
       } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Apply failed");
+        toast.error(e instanceof Error ? e.message : "Failed");
       } finally {
         setApplyingInsights(false);
       }
     },
-    [cache, refreshInsights]
+    [cache, reloadGroupInsights, selectedGroupId]
+  );
+
+  const dismissInsightIds = useCallback(
+    async (ids: string[]) => {
+      const clean = ids.map(insightIdString).filter(Boolean);
+      if (!clean.length) return;
+      setApplyingInsights(true);
+      try {
+        const res = await fetch("/api/telegram/insights/dismiss", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ insightIds: clean }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Dismiss failed");
+        if (selectedGroupId) await reloadGroupInsights(selectedGroupId);
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Dismiss failed");
+      } finally {
+        setApplyingInsights(false);
+      }
+    },
+    [reloadGroupInsights, selectedGroupId]
   );
 
   const runInsights = useCallback(
     async (groupId?: string, applyMode: "preview" | "all" = "preview") => {
-      setRunningInsights(true);
       if (groupId) setAnalyzingGroup(true);
       try {
         const res = await fetch("/api/telegram/insights", {
@@ -215,8 +230,6 @@ export default function NotificationsPage() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Insights failed");
         const list = Array.isArray(data.insights) ? data.insights : [];
-        setInsights(list);
-        cache.setInsights(list);
         setInsightNotes(data.processingNotes || "");
         setAnalyzedMsgCount(data.analyzedMessageCount);
 
@@ -246,65 +259,17 @@ export default function NotificationsPage() {
 
         if (groupId) {
           setGroupInsights(list);
+          setTab("chats");
+          await loadMessages(groupId, false, analyzeLimit);
         }
       } catch (e) {
         toast.error(e instanceof Error ? e.message : "Could not run insights");
       } finally {
-        setRunningInsights(false);
         setAnalyzingGroup(false);
       }
     },
-    [cache, setInsights, analyzeLimit]
+    [cache, analyzeLimit]
   );
-
-  const fetchMessagesFromTelegram = useCallback(
-    async (groupId: string, limit?: number) => {
-      const cap = Math.min(100, Math.max(5, limit ?? analyzeLimit));
-      setFetchingMessages(true);
-      try {
-        const res = await fetch("/api/telegram/messages/fetch", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ groupId, limit: cap }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Fetch failed");
-        await loadMessages(groupId, false, cap);
-        await refreshGroups();
-        toast.success(data.message || `Loaded ${data.fetched} messages`);
-      } catch (e) {
-        toast.error(e instanceof Error ? e.message : "Could not load messages");
-      } finally {
-        setFetchingMessages(false);
-      }
-    },
-    [loadMessages, refreshGroups, analyzeLimit]
-  );
-
-  useEffect(() => {
-    if (insightsRan.current || tab !== "insights") return;
-    const monitored = (groups || []).filter((g) => g.monitoringEnabled);
-    if (monitored.length === 0) return;
-    insightsRan.current = true;
-    void refreshInsights();
-  }, [tab, groups, refreshInsights]);
-
-  useEffect(() => {
-    const monitored = (groups || []).filter((g) => g.monitoringEnabled);
-    if (monitored.length === 0) return;
-    const id = setInterval(async () => {
-      try {
-        const prefsRes = await fetch("/api/settings");
-        const prefs = await prefsRes.json();
-        if (prefs?.telegram?.autoInsights === false) return;
-        const mode = prefs?.telegram?.insightsApplyMode === "all" ? "all" : "preview";
-        await runInsights(undefined, mode);
-      } catch {
-        /* ignore poll errors */
-      }
-    }, 5 * 60_000);
-    return () => clearInterval(id);
-  }, [groups, runInsights]);
 
   async function syncAllGroups() {
     setSyncingCatalog(true);
@@ -343,7 +308,7 @@ export default function NotificationsPage() {
       );
       toast.success(enabled ? "Monitoring on" : "Monitoring off");
       if (enabled) {
-        void fetchMessagesFromTelegram(groupId, analyzeLimit).then(() => runInsights(groupId));
+        toast.message("Monitor on — open the chat and tap Analyze");
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Could not update monitoring");
@@ -371,23 +336,8 @@ export default function NotificationsPage() {
     setSelectedGroupId(groupId);
     setMessages([]);
     setGroupInsights([]);
-    void (async () => {
-      const g = (groups || []).find((x) => x.groupId === groupId);
-      await loadMessages(groupId, false, analyzeLimit);
-      void fetch(`/api/telegram/insights?groupId=${encodeURIComponent(groupId)}`)
-        .then((r) => r.json())
-        .then((d) => setGroupInsights(Array.isArray(d) ? d : []));
-
-      if (g?.monitoringEnabled) {
-        await fetchMessagesFromTelegram(groupId, analyzeLimit);
-        const prefsRes = await fetch("/api/settings");
-        const prefs = await prefsRes.json();
-        if (prefs?.telegram?.autoInsights !== false) {
-          const mode = prefs?.telegram?.insightsApplyMode === "all" ? "all" : "preview";
-          await runInsights(groupId, mode);
-        }
-      }
-    })();
+    void loadMessages(groupId, false, analyzeLimit);
+    void reloadGroupInsights(groupId);
   }
 
   function backToGroups() {
@@ -410,9 +360,6 @@ export default function NotificationsPage() {
               }}
             >
               <MessageSquare className="h-4 w-4 mr-1" /> Chats
-            </Button>
-            <Button variant={tab === "insights" ? "default" : "outline"} size="sm" onClick={() => setTab("insights")}>
-              <Sparkles className="h-4 w-4 mr-1" /> AI insights
             </Button>
             <Button variant={tab === "alerts" ? "default" : "outline"} size="sm" onClick={() => setTab("alerts")}>
               <Bell className="h-4 w-4 mr-1" /> Alerts
@@ -440,78 +387,10 @@ export default function NotificationsPage() {
             >
               <RefreshCw className="h-4 w-4 mr-1" /> Refresh list
             </LoadingButton>
-            <LoadingButton
-              variant="glow"
-              size="sm"
-              loading={runningInsights && !analyzingGroup}
-              onClick={() => void runInsights()}
-            >
-              <Sparkles className="h-4 w-4 mr-1" /> AI (monitored)
-            </LoadingButton>
           </div>
         </div>
 
-        {tab === "insights" ? (
-          <div className="space-y-4 max-w-3xl">
-            <p className="text-sm text-muted-foreground">
-              See full AI output before applying. Set message count / date in{" "}
-              <Link href="/dashboard/settings" className="text-primary underline">
-                Settings
-              </Link>{" "}
-              or{" "}
-              <Link href="/dashboard/insights" className="text-primary underline">
-                AI Insights
-              </Link>{" "}
-              screen.
-            </p>
-            <Card className="glass">
-              <CardContent className="pt-4 flex flex-wrap gap-3 items-end">
-                <div className="space-y-1">
-                  <Label className="text-xs">Messages per group</Label>
-                  <Input
-                    type="number"
-                    className="h-8 w-24"
-                    min={5}
-                    max={100}
-                    value={analyzeLimit}
-                    onChange={(e) => setAnalyzeLimit(Number(e.target.value) || 25)}
-                  />
-                </div>
-                <LoadingButton
-                  variant="outline"
-                  size="sm"
-                  loading={runningInsights}
-                  onClick={() => void runInsights(undefined, "all")}
-                >
-                  Quick apply all (skip preview)
-                </LoadingButton>
-              </CardContent>
-            </Card>
-            {loadingInsights && !(insights?.length) ? (
-              <Skeleton className="h-48 rounded-xl" />
-            ) : !insights?.length ? (
-              <Card className="glass">
-                <CardContent className="py-12 text-center text-muted-foreground">
-                  No insights yet. Turn on monitoring, load messages, then <strong>Run AI now</strong>.
-                </CardContent>
-              </Card>
-            ) : (
-              <InsightsAnalysisPanel
-                insights={insights}
-                analyzedMessageCount={analyzedMsgCount}
-                processingNotes={insightNotes}
-                applying={applyingInsights}
-                onApplyAll={({ pinToOverview }) =>
-                  applyInsightIds(
-                    insights.filter((i) => i.status === "draft").map((i) => i._id),
-                    pinToOverview
-                  )
-                }
-                onApplySelected={(ids, { pinToOverview }) => applyInsightIds(ids, pinToOverview)}
-              />
-            )}
-          </div>
-        ) : tab === "alerts" ? (
+        {tab === "alerts" ? (
           <div className="space-y-3 max-w-2xl">
             {systemNotifs.length === 0 ? (
               <Card className="glass">
@@ -542,18 +421,23 @@ export default function NotificationsPage() {
               <Info className="h-5 w-5 text-primary shrink-0 mt-0.5" />
               <div className="text-muted-foreground space-y-1">
                 <p>
-                  <strong className="text-foreground">Monitor toggle</strong> (right of each group) = AI watches
-                  only those groups for placements. You do not need to monitor everything.
+                  <strong className="text-foreground">1.</strong> Turn <strong>Monitor ON</strong> (green switch on the
+                  right of each group).
                 </p>
                 <p>
-                  Open a chat → <strong>Load messages</strong> from Telegram → <strong>Analyze this group</strong> for
-                  insights stored per group.
+                  <strong className="text-foreground">2.</strong> Select a group → <strong>Analyze</strong> (loads
+                  messages + runs AI). Only items with real deadlines get <strong>Set deadline</strong>.
                 </p>
               </div>
             </CardContent>
           </Card>
-          <div className="grid lg:grid-cols-[340px_1fr] gap-4 h-[calc(100vh-14rem)] min-h-[480px]">
-            <Card className={cn("glass flex flex-col overflow-hidden", showChatPanel && "hidden lg:flex")}>
+          <div className="grid grid-cols-1 xl:grid-cols-[minmax(300px,360px)_1fr] gap-4 min-h-[520px]">
+            <Card
+              className={cn(
+                "glass flex flex-col overflow-hidden min-h-[400px]",
+                showChatPanel ? "max-xl:hidden" : "flex"
+              )}
+            >
               <div className="p-4 border-b border-white/5 space-y-3">
                 <div>
                   <h2 className="text-sm font-semibold flex items-center gap-2">
@@ -663,14 +547,24 @@ export default function NotificationsPage() {
                               {g.lastMessagePreview || "No messages yet"}
                             </p>
                           </button>
-                          <div className="flex flex-col items-center gap-1 shrink-0">
+                          <div
+                            className="flex flex-col items-center gap-1 shrink-0 rounded-lg border border-white/10 bg-white/5 px-2 py-1.5"
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             <Switch
                               checked={!!g.monitoringEnabled}
                               disabled={togglingGroupId === g.groupId}
                               onCheckedChange={(v) => void toggleMonitoring(g.groupId, v)}
                               aria-label={`Monitor ${g.title}`}
                             />
-                            <Label className="text-[9px] text-muted-foreground font-medium">AI Monitor</Label>
+                            <span
+                              className={cn(
+                                "text-[10px] font-semibold whitespace-nowrap",
+                                g.monitoringEnabled ? "text-emerald-400" : "text-muted-foreground"
+                              )}
+                            >
+                              Monitor
+                            </span>
                           </div>
                         </div>
                         <div className="flex justify-between items-center mt-2 pl-0">
@@ -690,7 +584,12 @@ export default function NotificationsPage() {
               </ScrollArea>
             </Card>
 
-            <Card className={cn("glass flex flex-col overflow-hidden", !showChatPanel && "hidden lg:flex")}>
+            <Card
+              className={cn(
+                "glass flex flex-col overflow-hidden min-h-[400px]",
+                !showChatPanel ? "max-xl:hidden" : "flex"
+              )}
+            >
               {!selectedGroup ? (
                 <CardContent className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
                   <div className="text-center">
@@ -720,35 +619,37 @@ export default function NotificationsPage() {
                           <span>{selectedGroup.messageCount} stored</span>
                         </p>
                       </div>
-                      <div className="flex flex-col items-center gap-0.5 shrink-0">
+                      <div
+                        className="flex flex-col items-center gap-1 shrink-0 rounded-lg border border-primary/30 bg-primary/10 px-3 py-2"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <Switch
                           checked={!!selectedGroup.monitoringEnabled}
                           disabled={togglingGroupId === selectedGroup.groupId}
                           onCheckedChange={(v) => void toggleMonitoring(selectedGroup.groupId, v)}
                         />
-                        <span className="text-[9px] text-muted-foreground">Monitor</span>
+                        <span className="text-[10px] font-semibold text-foreground">Monitor</span>
                       </div>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      <LoadingButton
-                        size="sm"
-                        variant="outline"
-                        loading={fetchingMessages}
-                        onClick={() => void fetchMessagesFromTelegram(selectedGroup.groupId)}
-                      >
-                        <Download className="h-4 w-4 mr-1" /> Load messages
-                      </LoadingButton>
+                    <div className="flex flex-wrap gap-2 items-center">
                       <LoadingButton
                         size="sm"
                         variant="glow"
                         loading={analyzingGroup}
                         onClick={() => void runInsights(selectedGroup.groupId)}
                       >
-                        <Sparkles className="h-4 w-4 mr-1" /> Analyze this group
+                        <Sparkles className="h-4 w-4 mr-1" /> Analyze ({analyzeLimit} msgs)
                       </LoadingButton>
+                      <span className="text-xs text-muted-foreground">
+                        Loads from Telegram, then analyzes. Count in{" "}
+                        <Link href="/dashboard/settings" className="text-primary underline">
+                          Settings
+                        </Link>
+                        .
+                      </span>
                     </div>
                   </div>
-                  <ScrollArea className="flex-1 p-4">
+                  <ScrollArea className="flex-1 p-4 max-h-[40vh]">
                     {loadingMessages && !messages.length ? (
                       <div className="space-y-3">
                         {Array.from({ length: 5 }).map((_, i) => (
@@ -761,10 +662,10 @@ export default function NotificationsPage() {
                         <LoadingButton
                           variant="glow"
                           size="sm"
-                          loading={fetchingMessages}
-                          onClick={() => void fetchMessagesFromTelegram(selectedGroup.groupId)}
+                          loading={analyzingGroup}
+                          onClick={() => void runInsights(selectedGroup.groupId)}
                         >
-                          <Download className="h-4 w-4 mr-1" /> Load messages from Telegram
+                          <Sparkles className="h-4 w-4 mr-1" /> Analyze ({analyzeLimit} msgs)
                         </LoadingButton>
                       </div>
                     ) : (
@@ -776,49 +677,16 @@ export default function NotificationsPage() {
                     )}
                   </ScrollArea>
                   {groupInsights.length > 0 && (
-                    <div className="p-3 border-t border-white/5 max-h-56 overflow-y-auto space-y-2">
-                      <p className="text-xs font-semibold flex items-center gap-1">
-                        <Sparkles className="h-3 w-3" /> {groupInsights.length} insight(s) for this group
-                      </p>
-                      {groupInsights.map((ins) => (
-                        <div key={ins._id} className="text-xs rounded-lg bg-primary/10 p-2 space-y-1">
-                          <div className="flex gap-1 flex-wrap">
-                            <Badge className="text-[8px] h-4">{ins.urgency}</Badge>
-                            {ins.status === "draft" && (
-                              <Badge variant="outline" className="text-[8px] h-4">
-                                draft
-                              </Badge>
-                            )}
-                          </div>
-                          <span className="font-medium block">{ins.title}</span>
-                          <p className="text-muted-foreground">{ins.summary}</p>
-                          {ins.extractedDeadline?.company && (
-                            <p className="text-primary/90">
-                              Deadline: {ins.extractedDeadline.company} — {ins.extractedDeadline.role}
-                            </p>
-                          )}
-                          {(ins.suggestedReminderOffsetsMinutes?.length ?? 0) > 0 && (
-                            <p className="text-amber-400/90">
-                              Reminders:{" "}
-                              {ins.suggestedReminderOffsetsMinutes!
-                                .slice(0, 4)
-                                .map((m) =>
-                                  m >= 60 ? `${Math.round(m / 60)}h` : `${m}m`
-                                )
-                                .join(", ")}{" "}
-                              before
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                      <Button
-                        size="sm"
-                        variant="link"
-                        className="h-6 text-xs p-0"
-                        onClick={() => setTab("insights")}
-                      >
-                        Open full insights tab →
-                      </Button>
+                    <div className="p-4 border-t border-white/5 overflow-y-auto max-h-[50vh]">
+                      <InsightsAnalysisPanel
+                        insights={groupInsights}
+                        analyzedMessageCount={analyzedMsgCount}
+                        processingNotes={insightNotes}
+                        applying={applyingInsights}
+                        onSetDeadline={(id, opts) => setDeadlineIds([id], opts.pinToOverview)}
+                        onSetAllDeadlines={(ids, opts) => setDeadlineIds(ids, opts.pinToOverview)}
+                        onDismiss={(ids) => dismissInsightIds(ids)}
+                      />
                     </div>
                   )}
                 </>

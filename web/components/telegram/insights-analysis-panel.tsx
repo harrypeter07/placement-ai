@@ -2,20 +2,19 @@
 
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import {
-  AlarmClock,
-  Calendar,
-  Check,
-  CheckSquare,
-  Sparkles,
-  Square,
-} from "lucide-react";
+import { AlarmClock, Calendar, Check, Sparkles, X } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { LoadingButton } from "@/components/ui/loading-button";
 import { cn, formatDate } from "@/lib/utils";
+import {
+  insightIdString,
+  isActionableDeadlineInsight,
+  isInfoOnlyInsight,
+} from "@/lib/insight-utils";
 
 export type InsightRow = {
   _id: string;
@@ -58,39 +57,35 @@ export function InsightsAnalysisPanel({
   insights,
   analyzedMessageCount,
   processingNotes,
-  onApplySelected,
-  onApplyAll,
+  onSetDeadline,
+  onSetAllDeadlines,
+  onDismiss,
   applying,
 }: {
   insights: InsightRow[];
   analyzedMessageCount?: number;
   processingNotes?: string;
-  onApplySelected: (ids: string[], opts: { pinToOverview: boolean }) => Promise<void>;
-  onApplyAll: (opts: { pinToOverview: boolean }) => Promise<void>;
+  onSetDeadline: (id: string, opts: { pinToOverview: boolean }) => Promise<void>;
+  onSetAllDeadlines: (ids: string[], opts: { pinToOverview: boolean }) => Promise<void>;
+  onDismiss?: (ids: string[]) => Promise<void>;
   applying?: boolean;
 }) {
-  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [pinOverview, setPinOverview] = useState(true);
 
   const drafts = useMemo(
-    () => insights.filter((i) => i.status !== "applied" && i.status !== "dismissed"),
+    () =>
+      insights.filter((i) => i.status !== "applied" && i.status !== "dismissed"),
     [insights]
   );
 
-  const allIds = drafts.map((i) => i._id);
+  const deadlineDrafts = useMemo(
+    () => drafts.filter((i) => isActionableDeadlineInsight(i)),
+    [drafts]
+  );
 
-  function toggle(id: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
+  const infoDrafts = useMemo(() => drafts.filter((i) => isInfoOnlyInsight(i)), [drafts]);
 
-  function selectAll() {
-    setSelected(new Set(allIds));
-  }
+  const deadlineIds = deadlineDrafts.map((i) => insightIdString(i._id)).filter(Boolean);
 
   if (!insights.length) return null;
 
@@ -98,9 +93,9 @@ export function InsightsAnalysisPanel({
     <div className="space-y-4">
       <Card className="glass border-primary/30">
         <CardHeader className="pb-2">
-          <CardTitle className="text-base flex items-center gap-2">
+          <CardTitle className="text-base flex items-center gap-2 flex-wrap">
             <Sparkles className="h-5 w-5 text-primary" />
-            {insights.length} insight{insights.length !== 1 ? "s" : ""} generated
+            {insights.length} result{insights.length !== 1 ? "s" : ""}
             {analyzedMessageCount != null && (
               <span className="text-xs font-normal text-muted-foreground">
                 from {analyzedMessageCount} message{analyzedMessageCount !== 1 ? "s" : ""}
@@ -110,143 +105,195 @@ export function InsightsAnalysisPanel({
           {processingNotes && (
             <p className="text-xs text-muted-foreground">{processingNotes}</p>
           )}
+          <p className="text-xs text-muted-foreground">
+            {deadlineDrafts.length > 0
+              ? `${deadlineDrafts.length} with deadlines — use Set deadline to add to your calendar.`
+              : "No deadlines detected in this batch."}
+            {infoDrafts.length > 0 &&
+              ` ${infoDrafts.length} info-only (no deadline to set).`}
+          </p>
         </CardHeader>
-        <CardContent className="flex flex-wrap gap-2 items-center">
-          <Button
-            size="sm"
-            variant="glow"
-            disabled={applying || !drafts.length}
-            onClick={() => void onApplyAll({ pinToOverview: pinOverview })}
-          >
-            <Check className="h-4 w-4 mr-1" /> Apply all ({drafts.length})
-          </Button>
-          <Button
-            size="sm"
-            variant="outline"
-            disabled={applying || selected.size === 0}
-            onClick={() => void onApplySelected([...selected], { pinToOverview: pinOverview })}
-          >
-            Apply selected ({selected.size})
-          </Button>
-          <Button size="sm" variant="ghost" onClick={selectAll}>
-            Select all
-          </Button>
-          <div className="flex items-center gap-2 text-xs ml-auto">
-            <Switch id="pin-overview" checked={pinOverview} onCheckedChange={setPinOverview} />
-            <Label htmlFor="pin-overview" className="cursor-pointer">
-              Pin to overview
-            </Label>
-          </div>
-        </CardContent>
+        {deadlineDrafts.length > 0 && (
+          <CardContent className="flex flex-wrap gap-2 items-center pt-0">
+            <LoadingButton
+              size="sm"
+              variant="glow"
+              loading={applying}
+              onClick={() => void onSetAllDeadlines(deadlineIds, { pinToOverview: pinOverview })}
+            >
+              <Calendar className="h-4 w-4 mr-1" />
+              Set all deadlines ({deadlineDrafts.length})
+            </LoadingButton>
+            <div className="flex items-center gap-2 text-xs ml-auto">
+              <Switch id="pin-overview" checked={pinOverview} onCheckedChange={setPinOverview} />
+              <Label htmlFor="pin-overview" className="cursor-pointer">
+                Pin to overview
+              </Label>
+            </div>
+          </CardContent>
+        )}
       </Card>
 
-      {insights.map((ins, idx) => (
-        <motion.div
-          key={ins._id}
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: idx * 0.04 }}
-        >
-          <Card
-            className={cn(
-              "glass overflow-hidden",
-              ins.status === "applied" && "border-green-500/30",
-              selected.has(ins._id) && "ring-1 ring-primary/50"
-            )}
-          >
-            <CardContent className="p-4 space-y-3">
-              <div className="flex gap-3">
-                {ins.status === "draft" && (
-                  <button
-                    type="button"
-                    className="mt-1 shrink-0 text-muted-foreground hover:text-primary"
-                    onClick={() => toggle(ins._id)}
-                    aria-label="Select insight"
-                  >
-                    {selected.has(ins._id) ? (
-                      <CheckSquare className="h-5 w-5 text-primary" />
-                    ) : (
-                      <Square className="h-5 w-5" />
-                    )}
-                  </button>
-                )}
-                <div className="flex-1 min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs text-muted-foreground">#{ins.rank}</span>
-                    <h3 className="font-semibold">{ins.title}</h3>
-                    <Badge className={cn("text-[10px]", urgencyClass[ins.urgency] || urgencyClass.medium)}>
-                      {ins.urgency}
-                    </Badge>
-                    <Badge variant="outline" className="text-[10px]">
-                      {ins.category}
-                    </Badge>
-                    {ins.status === "applied" && (
-                      <Badge variant="success" className="text-[10px]">
-                        Applied
-                      </Badge>
-                    )}
-                  </div>
-                  <p className="text-sm mt-2 whitespace-pre-wrap">{ins.summary}</p>
-                  {ins.whyRanked && (
-                    <p className="text-xs text-primary/80 mt-2">
-                      <strong>Why ranked:</strong> {ins.whyRanked}
-                    </p>
-                  )}
-                  {ins.sourceMessagePreview && (
-                    <p className="text-xs text-muted-foreground mt-2 italic border-l-2 border-primary/30 pl-2">
-                      From chat: {ins.sourceMessagePreview}
-                    </p>
-                  )}
-                  <p className="text-[10px] text-muted-foreground mt-2">
-                    {ins.groupTitle || ins.groupId} · confidence {(ins.confidence * 100).toFixed(0)}%
-                  </p>
-                </div>
-              </div>
-
-              {ins.extractedDeadline?.company && (
-                <div className="rounded-lg bg-primary/10 p-3 text-sm space-y-1">
-                  <p className="font-medium flex items-center gap-2">
-                    <Calendar className="h-4 w-4 text-primary" />
-                    Proposed deadline
-                  </p>
-                  <p>
-                    {ins.extractedDeadline.company} — {ins.extractedDeadline.role || "Role"}
-                  </p>
-                  <p className="text-muted-foreground">
-                    Due: {formatDate(ins.extractedDeadline.deadline)}
-                    {ins.extractedDeadline.eligibility
-                      ? ` · ${ins.extractedDeadline.eligibility}`
-                      : ""}
-                  </p>
-                </div>
-              )}
-
-              {(ins.suggestedReminderOffsetsMinutes?.length ?? 0) > 0 && (
-                <div className="rounded-lg bg-amber-500/10 p-3 text-sm">
-                  <p className="font-medium flex items-center gap-2 mb-2">
-                    <AlarmClock className="h-4 w-4 text-amber-400" />
-                    Reminder schedule (if applied)
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {ins.suggestedReminderOffsetsMinutes!.map((m) => (
-                      <Badge key={m} variant="outline" className="text-[10px]">
-                        {offsetLabel(m)}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {(ins.reminderCount ?? 0) > 0 && ins.status === "applied" && (
-                <p className="text-xs text-green-400">
-                  ✓ {ins.reminderCount} reminder(s) created
-                  {ins.deadlineId ? " · deadline linked" : ""}
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        </motion.div>
+      {deadlineDrafts.map((ins, idx) => (
+        <InsightCard
+          key={insightIdString(ins._id) || `dl-${idx}`}
+          ins={ins}
+          idx={idx}
+          applying={applying}
+          pinOverview={pinOverview}
+          variant="deadline"
+          onSetDeadline={onSetDeadline}
+        />
       ))}
+
+      {infoDrafts.map((ins, idx) => (
+        <InsightCard
+          key={insightIdString(ins._id) || `info-${idx}`}
+          ins={ins}
+          idx={idx}
+          applying={applying}
+          pinOverview={pinOverview}
+          variant="info"
+          onDismiss={onDismiss}
+        />
+      ))}
+
+      {insights
+        .filter((i) => i.status === "applied" || i.status === "dismissed")
+        .map((ins, idx) => (
+          <InsightCard
+            key={insightIdString(ins._id) || `done-${idx}`}
+            ins={ins}
+            idx={idx}
+            variant="done"
+          />
+        ))}
     </div>
+  );
+}
+
+function InsightCard({
+  ins,
+  idx,
+  variant,
+  applying,
+  pinOverview,
+  onSetDeadline,
+  onDismiss,
+}: {
+  ins: InsightRow;
+  idx: number;
+  variant: "deadline" | "info" | "done";
+  applying?: boolean;
+  pinOverview?: boolean;
+  onSetDeadline?: (id: string, opts: { pinToOverview: boolean }) => Promise<void>;
+  onDismiss?: (ids: string[]) => Promise<void>;
+}) {
+  const id = insightIdString(ins._id);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: idx * 0.04 }}
+    >
+      <Card
+        className={cn(
+          "glass overflow-hidden",
+          ins.status === "applied" && "border-green-500/30",
+          variant === "info" && "border-white/10"
+        )}
+      >
+        <CardContent className="p-4 space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs text-muted-foreground">#{ins.rank}</span>
+            <h3 className="font-semibold flex-1 min-w-0">{ins.title}</h3>
+            <Badge className={cn("text-[10px]", urgencyClass[ins.urgency] || urgencyClass.medium)}>
+              {ins.urgency}
+            </Badge>
+            {ins.status === "applied" && (
+              <Badge variant="success" className="text-[10px]">
+                <Check className="h-3 w-3 mr-0.5" /> Saved
+              </Badge>
+            )}
+            {ins.status === "dismissed" && (
+              <Badge variant="outline" className="text-[10px]">
+                Dismissed
+              </Badge>
+            )}
+            {variant === "info" && ins.status === "draft" && (
+              <Badge variant="outline" className="text-[10px]">
+                Info
+              </Badge>
+            )}
+          </div>
+
+          <p className="text-sm whitespace-pre-wrap text-muted-foreground">{ins.summary}</p>
+
+          {ins.whyRanked && variant === "deadline" && (
+            <p className="text-xs text-primary/80">
+              <strong>Why:</strong> {ins.whyRanked}
+            </p>
+          )}
+
+          <p className="text-[10px] text-muted-foreground">
+            {ins.groupTitle || ins.groupId}
+          </p>
+
+          {variant === "deadline" && ins.extractedDeadline?.company && (
+            <div className="rounded-lg bg-primary/10 p-3 text-sm space-y-1">
+              <p className="font-medium flex items-center gap-2">
+                <Calendar className="h-4 w-4 text-primary" />
+                {ins.extractedDeadline.company} — {ins.extractedDeadline.role || "Role"}
+              </p>
+              <p className="text-muted-foreground">
+                Due: {formatDate(ins.extractedDeadline.deadline)}
+              </p>
+              {(ins.suggestedReminderOffsetsMinutes?.length ?? 0) > 0 && (
+                <div className="flex flex-wrap gap-1 pt-1">
+                  <AlarmClock className="h-3.5 w-3.5 text-amber-400" />
+                  {ins.suggestedReminderOffsetsMinutes!.map((m) => (
+                    <Badge key={m} variant="outline" className="text-[10px]">
+                      {offsetLabel(m)}
+                    </Badge>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {variant === "deadline" && ins.status === "draft" && onSetDeadline && id && (
+            <LoadingButton
+              size="sm"
+              variant="glow"
+              loading={applying}
+              className="w-full sm:w-auto"
+              onClick={() => void onSetDeadline(id, { pinToOverview: pinOverview ?? true })}
+            >
+              <Calendar className="h-4 w-4 mr-1" /> Set deadline
+            </LoadingButton>
+          )}
+
+          {variant === "info" && ins.status === "draft" && onDismiss && id && (
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-muted-foreground"
+              disabled={applying}
+              onClick={() => void onDismiss([id])}
+            >
+              <X className="h-4 w-4 mr-1" /> Dismiss
+            </Button>
+          )}
+
+          {(ins.reminderCount ?? 0) > 0 && ins.status === "applied" && (
+            <p className="text-xs text-green-400">
+              {ins.reminderCount} reminder(s) scheduled
+              {ins.deadlineId ? " · on Deadlines page" : ""}
+            </p>
+          )}
+        </CardContent>
+      </Card>
+    </motion.div>
   );
 }

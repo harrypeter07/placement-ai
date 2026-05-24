@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import mongoose from "mongoose";
 import { connectDB } from "@/lib/mongodb";
+import { hasValidExtractedDeadline } from "@/lib/insight-utils";
 import { PlacementInsight } from "@/models/PlacementInsight";
 import { StudentPreferences } from "@/models/StudentPreferences";
 import { requireAuth } from "@/lib/api-auth";
@@ -22,7 +24,20 @@ export async function POST(req: Request) {
     const body = await req.json();
     const parsed = schema.safeParse(body);
     if (!parsed.success) {
-      return NextResponse.json({ error: "Invalid input" }, { status: 400 });
+      return NextResponse.json(
+        {
+          error: "Invalid input — pick at least one insight with a valid deadline",
+          details: parsed.error.flatten(),
+        },
+        { status: 400 }
+      );
+    }
+
+    const ids = parsed.data.insightIds
+      .map((id) => String(id).trim())
+      .filter((id) => mongoose.Types.ObjectId.isValid(id));
+    if (!ids.length) {
+      return NextResponse.json({ error: "Invalid insight ids" }, { status: 400 });
     }
 
     await connectDB();
@@ -30,20 +45,27 @@ export async function POST(req: Request) {
     const pinDefault = prefs?.telegram?.insightPinToOverview ?? true;
     const pinToOverview = parsed.data.pinToOverview ?? pinDefault;
     const rows = await PlacementInsight.find({
-      _id: { $in: parsed.data.insightIds },
+      _id: { $in: ids },
       userId: user.id,
       status: "draft",
-    });
+    }).lean();
 
-    if (!rows.length) {
-      return NextResponse.json({ error: "No draft insights found to apply" }, { status: 404 });
+    const actionable = rows.filter((r) => hasValidExtractedDeadline(r));
+    if (!actionable.length) {
+      return NextResponse.json(
+        {
+          error:
+            "None of the selected items have a parseable deadline. Info-only messages cannot be applied — use Dismiss or ignore them.",
+        },
+        { status: 400 }
+      );
     }
 
     const results = [];
     let deadlines = 0;
     let reminders = 0;
 
-    for (const row of rows) {
+    for (const row of actionable) {
       const applied = await applySingleInsight(user.id, row, prefs, {
         createDeadlines: parsed.data.createDeadlines,
         createReminders: parsed.data.createReminders,
@@ -57,8 +79,9 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       ok: true,
-      applied: rows.length,
-      created: { deadlines, reminders, insights: rows.length },
+      applied: actionable.length,
+      skipped: rows.length - actionable.length,
+      created: { deadlines, reminders, insights: actionable.length },
       results,
     });
   } catch (e) {
