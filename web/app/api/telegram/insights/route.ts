@@ -11,7 +11,6 @@ import {
   applyChatInsightsForUser,
   storeDraftInsights,
 } from "@/lib/ai/apply-chat-insights";
-import { isGeminiConfigured } from "@/lib/ai/gemini-env";
 import { ensureMessagesForGroups } from "@/lib/telegram-ensure-messages";
 
 export const runtime = "nodejs";
@@ -181,7 +180,7 @@ export async function POST(req: Request) {
         analyzedGroupId: targetGroupId,
         applyMode: mode,
         messagesFetched: fetchResult.fetched,
-        geminiConfigured: isGeminiConfigured(),
+        analysisEngine: analysis.analysisEngine ?? (analysis.usedGemini ? "gemini" : "smart-rules"),
         usedGemini: analysis.usedGemini ?? false,
       });
     }
@@ -209,7 +208,7 @@ export async function POST(req: Request) {
       applyMode: "all",
       results: created.results,
       messagesFetched: fetchResult.fetched,
-      geminiConfigured: isGeminiConfigured(),
+      analysisEngine: analysis.analysisEngine ?? (analysis.usedGemini ? "gemini" : "smart-rules"),
       usedGemini: analysis.usedGemini ?? false,
     });
   } catch (e) {

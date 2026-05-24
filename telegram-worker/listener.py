@@ -20,11 +20,11 @@ load_dotenv()
 
 API_ID = int(os.getenv("TELEGRAM_API_ID", "0"))
 API_HASH = os.getenv("TELEGRAM_API_HASH", "")
-# Optional legacy fallback — dashboard monitoring prefs are preferred
+# Optional legacy env fallback only. Primary: all groups with Monitor ON in the app (no limit).
 LEGACY_GROUP_IDS = [
     int(g.strip())
     for g in os.getenv("TELEGRAM_GROUP_IDS", "").split(",")
-    if g.strip()
+    if g.strip().lstrip("-").isdigit()
 ]
 WEB_APP_URL = os.getenv("WEB_APP_URL", "http://localhost:3000").rstrip("/")
 WORKER_SECRET = os.getenv("TELEGRAM_WORKER_SECRET", "")

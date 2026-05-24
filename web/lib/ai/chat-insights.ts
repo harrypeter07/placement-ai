@@ -1,6 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { IStudentPreferences } from "@/models/StudentPreferences";
-import { GEMINI_MISSING_HINT, getGeminiApiKey, isGeminiConfigured } from "@/lib/ai/gemini-env";
+import { getGeminiApiKey, isGeminiConfigured } from "@/lib/ai/gemini-env";
+import { smartPlacementInsights } from "@/lib/ai/smart-placement-analysis";
 
 function getGenAI() {
   const key = getGeminiApiKey();
@@ -43,6 +44,7 @@ export type ChatInsightsResult = {
   processingNotes: string;
   usedGemini?: boolean;
   geminiConfigured?: boolean;
+  analysisEngine?: "gemini" | "smart-rules";
 };
 
 function clampOffsets(arr: unknown): number[] {
@@ -65,70 +67,25 @@ function normalizeCategory(c: unknown): ChatInsightItem["category"] {
   return "info";
 }
 
-function heuristicInsights(
-  groupId: string,
-  groupTitle: string,
-  messages: ChatMessageInput[]
+function runSmartRulesAnalysis(
+  groups: { groupId: string; title: string; messages: ChatMessageInput[] }[],
+  flatCount: number
 ): ChatInsightsResult {
-  const now = Date.now();
-  const items: ChatInsightItem[] = [];
-  let rank = 1;
-
-  for (const m of messages) {
-    const text = m.text || "";
-    if (!/deadline|apply|hiring|placement|intern|oa|interview|register|form|closing/i.test(text)) continue;
-
-    const dateMatch = text.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
-    let deadlineIso = "";
-    let urgency: ChatInsightItem["urgency"] = "medium";
-    if (dateMatch) {
-      const [, d, mo, y] = dateMatch;
-      const year = y.length === 2 ? `20${y}` : y;
-      const dt = new Date(`${year}-${mo}-${d}`);
-      if (!Number.isNaN(dt.getTime())) {
-        deadlineIso = dt.toISOString();
-        const hours = (dt.getTime() - now) / (3600 * 1000);
-        if (hours < 24) urgency = "critical";
-        else if (hours < 72) urgency = "high";
-      }
-    }
-    if (/today|tonight|eod|11:59|last date|closing soon/i.test(text)) urgency = "critical";
-
-    items.push({
-      rank: rank++,
-      title: text.slice(0, 72).replace(/\n/g, " ") || "Placement update",
-      summary: text.slice(0, 400),
-      urgency,
-      category: deadlineIso ? "deadline" : "action",
-      confidence: 0.55,
-      groupId,
-      groupTitle,
-      sourceMessageIds: [m.messageId],
-      extractedDeadline: deadlineIso
-        ? {
-            company: (text.match(/(?:company|org)[:\s]+([A-Za-z0-9\s&.]+)/i)?.[1] || "Unknown").trim(),
-            role: (text.match(/(?:role|position)[:\s]+([A-Za-z0-9\s&.]+)/i)?.[1] || "Role").trim(),
-            deadline: deadlineIso,
-            eligibility: "",
-            links: text.match(/https?:\/\/[^\s]+/g) || [],
-          }
-        : null,
-      suggestedReminderOffsetsMinutes: urgency === "critical" ? [6 * 60, 60, 30, 15] : [24 * 60, 6 * 60, 60],
-      whyRanked: urgency === "critical" ? "Near-term date or urgent wording" : "Placement keywords detected",
-    });
+  const merged: ChatInsightItem[] = [];
+  for (const g of groups) {
+    merged.push(...smartPlacementInsights(g.groupId, g.title, g.messages));
   }
-
-  items.sort((a, b) => {
-    const order = { critical: 0, high: 1, medium: 2, low: 3 };
-    return order[a.urgency] - order[b.urgency] || a.rank - b.rank;
-  });
-  items.forEach((it, i) => {
+  const order = { critical: 0, high: 1, medium: 2, low: 3 };
+  merged.sort((a, b) => order[a.urgency] - order[b.urgency] || a.rank - b.rank);
+  merged.forEach((it, i) => {
     it.rank = i + 1;
   });
-
   return {
-    insights: items.slice(0, 12),
-    processingNotes: `Keyword analysis only — Gemini not configured. ${GEMINI_MISSING_HINT}`,
+    insights: merged.slice(0, 15),
+    processingNotes: `Analyzed ${flatCount} message(s) with built-in placement rules (dates, companies, urgency).`,
+    usedGemini: false,
+    geminiConfigured: false,
+    analysisEngine: "smart-rules",
   };
 }
 
@@ -148,21 +105,7 @@ export async function analyzeChatMessagesForInsights(
   const geminiConfigured = isGeminiConfigured();
   const genAI = getGenAI();
   if (!geminiConfigured || !genAI) {
-    const merged: ChatInsightItem[] = [];
-    for (const g of groups) {
-      const r = heuristicInsights(g.groupId, g.title, g.messages);
-      merged.push(...r.insights);
-    }
-    merged.sort((a, b) => a.rank - b.rank);
-    merged.forEach((it, i) => {
-      it.rank = i + 1;
-    });
-    return {
-      insights: merged.slice(0, 15),
-      processingNotes: `Analyzed ${flatCount} message(s) with keyword rules only. ${GEMINI_MISSING_HINT}`,
-      usedGemini: false,
-      geminiConfigured: false,
-    };
+    return runSmartRulesAnalysis(groups, flatCount);
   }
 
   const transcript = groups
@@ -224,10 +167,22 @@ Rules:
 Transcripts:
 ${transcript.slice(0, 28000)}`;
 
+  const models = ["gemini-2.0-flash", "gemini-1.5-flash"];
+  let text = "";
+  let lastErr: unknown;
+  for (const modelName of models) {
+    try {
+      const model = genAI!.getGenerativeModel({ model: modelName });
+      const result = await model.generateContent(prompt);
+      text = result.response.text().replace(/```json\n?|\n?```/g, "").trim();
+      break;
+    } catch (e) {
+      lastErr = e;
+    }
+  }
+  if (!text) throw lastErr;
+
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-    const result = await model.generateContent(prompt);
-    const text = result.response.text().replace(/```json\n?|\n?```/g, "").trim();
     const parsed = JSON.parse(text) as {
       insights?: unknown[];
       processingNotes?: string;
@@ -273,18 +228,14 @@ ${transcript.slice(0, 28000)}`;
       ),
       usedGemini: true,
       geminiConfigured: true,
+      analysisEngine: "gemini",
     };
   } catch (err) {
-    const fallback = heuristicInsights(
-      groups[0]?.groupId || "",
-      groups[0]?.title || "Group",
-      groups.flatMap((g) => g.messages)
-    );
+    const smart = runSmartRulesAnalysis(groups, flatCount);
     const reason = err instanceof Error ? err.message : "API error";
     return {
-      ...fallback,
-      processingNotes: `Gemini failed (${reason}). Using keyword fallback for ${flatCount} message(s).`,
-      usedGemini: false,
+      ...smart,
+      processingNotes: `${smart.processingNotes} (AI unavailable: ${reason.slice(0, 80)})`,
       geminiConfigured: true,
     };
   }

@@ -58,6 +58,10 @@ python listener.py
 
 Set `WEB_APP_URL=http://localhost:3000` in the worker `.env`.
 
+## How it works
+
+See **[HOW_IT_WORKS.md](./HOW_IT_WORKS.md)** for Telegram groups (unlimited, dynamic), automation, AI analysis, PWA notifications, and worker setup.
+
 ## Features
 
 - Google & credentials authentication (student/admin roles)

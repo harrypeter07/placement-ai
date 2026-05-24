@@ -622,8 +622,8 @@ export default function SettingsPage() {
                   }
                 />
                 <p className="text-xs text-muted-foreground rounded-lg border border-white/10 bg-white/5 p-3">
-                  Gemini AI: set <code className="text-primary">GEMINI_API_KEY</code> in Vercel environment variables
-                  (Production + Preview), then redeploy. Without it, analysis uses basic keyword matching only.
+                  Optional: add <code className="text-primary">GEMINI_API_KEY</code> on Vercel for deeper AI analysis.
+                  Without it, built-in smart rules still analyze placement messages.
                 </p>
                 <PrefSwitchRow label="Auto-run insights on monitored groups" checked={prefs.telegram?.autoInsights ?? true} onChange={(v) => nest("telegram", { ...(prefs.telegram || { insightMessageCount: 25, monitoredGroupIds: [] }), autoInsights: v })} />
                 <PrefSwitchRow label="Auto-create deadlines from insights" checked={prefs.telegram?.autoCreateDeadlines ?? true} onChange={(v) => nest("telegram", { ...(prefs.telegram || { insightMessageCount: 25, monitoredGroupIds: [] }), autoCreateDeadlines: v })} />

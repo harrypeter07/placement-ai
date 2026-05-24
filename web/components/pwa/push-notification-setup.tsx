@@ -21,7 +21,6 @@ export function PushNotificationSetup() {
         const prefs = await prefsRes.json();
         if (cancelled || prefs.notifications?.push === false) return;
 
-        if (Notification.permission === "default") return;
         if (Notification.permission !== "granted") return;
 
         if (isFirebaseConfigured()) {

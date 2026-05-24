@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { PwaInstallBanner } from "@/components/pwa/pwa-install-banner";
+import { NotificationPermissionPrompt } from "@/components/pwa/notification-permission-prompt";
 import { PushNotificationSetup } from "@/components/pwa/push-notification-setup";
 
 export function PwaProvider({ children }: { children: React.ReactNode }) {
@@ -14,6 +15,7 @@ export function PwaProvider({ children }: { children: React.ReactNode }) {
     <>
       {children}
       <PwaInstallBanner />
+      <NotificationPermissionPrompt />
       <PushNotificationSetup />
     </>
   );

@@ -247,11 +247,7 @@ export default function NotificationsPage() {
           );
         }
         if (data.processingNotes) {
-          if (data.geminiConfigured === false) {
-            toast.warning(data.processingNotes, { duration: 8000 });
-          } else {
-            toast.message(data.processingNotes);
-          }
+          toast.message(data.processingNotes);
         }
         if (data.messagesFetched > 0) {
           toast.message(`Fetched ${data.messagesFetched} message(s) from Telegram`);
@@ -329,7 +325,13 @@ export default function NotificationsPage() {
           (g as { username?: string }).username?.toLowerCase().includes(q)
       )
     : groupList
-  ).filter((g) => (groupFilter === "monitored" ? g.monitoringEnabled : true));
+  )
+    .filter((g) => (groupFilter === "monitored" ? g.monitoringEnabled : true))
+    .sort((a, b) => {
+      const ta = a.lastMessageAt ? new Date(a.lastMessageAt).getTime() : 0;
+      const tb = b.lastMessageAt ? new Date(b.lastMessageAt).getTime() : 0;
+      return tb - ta || a.title.localeCompare(b.title);
+    });
   const monitoredCount = groupList.filter((g) => g.monitoringEnabled).length;
 
   function selectGroup(groupId: string) {
@@ -544,6 +546,9 @@ export default function NotificationsPage() {
                             </p>
                             <p className="text-xs text-muted-foreground truncate mt-0.5">
                               {g.username ? `@${g.username} · ` : ""}
+                              {g.lastMessageAt
+                                ? `Active ${formatDate(g.lastMessageAt)} · `
+                                : ""}
                               {g.lastMessagePreview || "No messages yet"}
                             </p>
                           </button>

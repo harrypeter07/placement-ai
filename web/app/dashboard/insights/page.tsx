@@ -54,16 +54,9 @@ export default function InsightsPage() {
       setInsights(list);
       setNotes(data.processingNotes || "");
       setAnalyzedCount(data.analyzedMessageCount);
-      if (data.geminiConfigured === false) {
-        toast.warning(
-          data.processingNotes || "Gemini API key not set on server — using keyword analysis only",
-          { duration: 8000 }
-        );
-      } else {
-        toast.success(
-          `Generated ${list.length} insight(s) from ${data.analyzedMessageCount ?? "?"} messages — review below`
-        );
-      }
+      toast.success(
+        `Generated ${list.length} insight(s) from ${data.analyzedMessageCount ?? "?"} messages — review below`
+      );
       if (data.messagesFetched > 0) {
         toast.message(`Loaded ${data.messagesFetched} message(s) from Telegram`);
       }

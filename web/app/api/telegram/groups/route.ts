@@ -31,7 +31,9 @@ export async function GET() {
       prefs = await StudentPreferences.create({ userId: user.id, ...getDefaultStudentPreferences() });
     }
     const monitored = new Set(prefs.telegram?.monitoredGroupIds || []);
-    const groups = await TelegramGroup.find().sort({ title: 1 }).lean();
+    const groups = await TelegramGroup.find()
+      .sort({ lastMessageAt: -1, updatedAt: -1, title: 1 })
+      .lean();
     return NextResponse.json(
       groups.map((g) => ({
         ...g,
