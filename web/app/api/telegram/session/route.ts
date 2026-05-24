@@ -2,12 +2,7 @@ import { NextResponse } from "next/server";
 import { connectDB } from "@/lib/mongodb";
 import { checkWorkerSecret } from "@/lib/telegram-worker-auth";
 import { TelegramWorkerSession } from "@/models/TelegramWorkerSession";
-import {
-  convertGramJsStringToTelethonString,
-  isValidTelethonSessionString,
-  sessionsLookIdentical,
-  telethonSessionForWorker,
-} from "@/lib/telegram-telethon-session";
+import { sessionsLookIdentical, telethonSessionForWorker } from "@/lib/telegram-telethon-session";
 
 export const runtime = "nodejs";
 
@@ -29,7 +24,7 @@ export async function GET(req: Request) {
     let telethon = doc?.telethonSessionString?.trim() || "";
     let repaired = false;
 
-    let workerSession = telethonSessionForWorker(telethon, gramjs);
+    const workerSession = telethonSessionForWorker(telethon, gramjs);
     if (workerSession && workerSession !== telethon) {
       telethon = workerSession;
       repaired = true;

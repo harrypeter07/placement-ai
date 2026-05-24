@@ -25,7 +25,6 @@ export async function POST() {
     }
 
     const existing = doc.telethonSessionString?.trim();
-    const fromGramjs = convertGramJsStringToTelethonString(doc.sessionString);
     if (
       existing &&
       isValidTelethonSessionString(existing) &&
