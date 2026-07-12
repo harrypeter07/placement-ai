@@ -18,7 +18,10 @@ from session_convert import gramjs_string_to_telethon
 
 load_dotenv()
 
-API_ID = int(os.getenv("TELEGRAM_API_ID", "0"))
+raw_api_id = os.getenv("TELEGRAM_API_ID", "0")
+if not raw_api_id or not raw_api_id.strip():
+    raw_api_id = "0"
+API_ID = int(raw_api_id)
 API_HASH = os.getenv("TELEGRAM_API_HASH", "")
 # Optional legacy env fallback only. Primary: all groups with Monitor ON in the app (no limit).
 LEGACY_GROUP_IDS = [
