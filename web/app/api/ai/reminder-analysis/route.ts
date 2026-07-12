@@ -1,10 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { connectDB } from "@/lib/mongodb";
+import { supabase } from "@/lib/supabase";
 import { requireAuth } from "@/lib/api-auth";
-import { StudentPreferences } from "@/models/StudentPreferences";
+import { getStudentPreferences } from "@/lib/db-supabase";
 import { analyzePlacementForReminders } from "@/lib/ai/reminder-intelligence";
-import { AiAutomationLog } from "@/models/AiAutomationLog";
 
 export const runtime = "nodejs";
 
@@ -20,16 +19,18 @@ export async function POST(req: Request) {
     if (!parsed.success) {
       return NextResponse.json({ error: "Invalid input" }, { status: 400 });
     }
-    await connectDB();
-    const prefs = await StudentPreferences.findOne({ userId: user.id });
+
+    const prefs = await getStudentPreferences(user.id);
     const analysis = await analyzePlacementForReminders(parsed.data.message, prefs);
 
-    await AiAutomationLog.create({
-      userId: user.id,
+    // Save logs in Supabase
+    await supabase.from("ai_automation_logs").insert([{
+      user_id: user.id,
       type: "ai_analysis",
       summary: `AI reminder analysis (${analysis.urgency})`,
       metadata: { confidence: analysis.confidence, isPlacement: analysis.isPlacement },
-    });
+      created_at: new Date().toISOString()
+    }]);
 
     return NextResponse.json(analysis);
   } catch (e) {

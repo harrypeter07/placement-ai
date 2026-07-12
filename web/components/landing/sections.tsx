@@ -96,7 +96,7 @@ export function IntegrationsSection() {
         <h2 className="text-3xl font-bold mb-4">College <span className="text-gradient">Integrations</span></h2>
         <p className="text-muted-foreground mb-12 max-w-xl mx-auto">Works with Telegram placement groups, Google Calendar, and email notifications.</p>
         <motion.div className="flex flex-wrap justify-center gap-8 opacity-70">
-          {["Telegram", "Google Calendar", "Gemini AI", "MongoDB Atlas"].map((name) => (
+          {["Telegram", "Google Calendar", "Gemini AI", "Supabase DB"].map((name) => (
             <motion.div key={name} className="glass rounded-xl px-8 py-4 font-medium">{name}</motion.div>
           ))}
         </motion.div>

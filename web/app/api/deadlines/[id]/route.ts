@@ -1,10 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { connectDB } from "@/lib/mongodb";
-import { Deadline } from "@/models/Deadline";
-import { Reminder } from "@/models/Reminder";
+import { supabase } from "@/lib/supabase";
 import { requireAuth } from "@/lib/api-auth";
-import { StudentPreferences } from "@/models/StudentPreferences";
+import { getStudentPreferences } from "@/lib/db-supabase";
 import { syncDeadlineToGoogleCalendar, removeDeadlineFromGoogleCalendar } from "@/lib/calendar/sync-deadline";
 
 export const runtime = "nodejs";
@@ -26,13 +24,16 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const body = await req.json();
     const parsed = updateSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
-    await connectDB();
 
-    const existing = await Deadline.findOne({
-      _id: id,
-      $or: [{ userId: user.id }, { isGlobal: true }],
-    });
-    if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    // Fetch existing deadline from Supabase
+    const { data: existing, error: fetchErr } = await supabase
+      .from("deadlines")
+      .select("*")
+      .eq("id", id)
+      .or(`user_id.eq.${user.id},is_global.eq.true`)
+      .maybeSingle();
+
+    if (fetchErr || !existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     const wantsCoreEdit =
       parsed.data.company !== undefined ||
@@ -41,7 +42,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       parsed.data.eligibility !== undefined;
 
     if (wantsCoreEdit) {
-      if (existing.isGlobal || String(existing.userId) !== user.id) {
+      if (existing.is_global || String(existing.user_id) !== user.id) {
         return NextResponse.json(
           { error: "You can only edit company, role, or date on deadlines you created." },
           { status: 403 }
@@ -55,30 +56,62 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     if (parsed.data.links !== undefined) payload.links = parsed.data.links;
     if (parsed.data.company !== undefined) payload.company = parsed.data.company;
     if (parsed.data.role !== undefined) payload.role = parsed.data.role;
-    if (parsed.data.deadline !== undefined) payload.deadline = new Date(parsed.data.deadline);
+    if (parsed.data.deadline !== undefined) payload.deadline_date = new Date(parsed.data.deadline).toISOString();
     if (parsed.data.eligibility !== undefined) payload.eligibility = parsed.data.eligibility;
+    payload.updated_at = new Date().toISOString();
 
-    const deadline = await Deadline.findOneAndUpdate(
-      { _id: id, $or: [{ userId: user.id }, { isGlobal: true }] },
-      payload,
-      { new: true }
-    );
-    if (!deadline) return NextResponse.json({ error: "Not found" }, { status: 404 });
+    const { data: deadline, error: updateErr } = await supabase
+      .from("deadlines")
+      .update(payload)
+      .eq("id", id)
+      .select("*")
+      .single();
 
-    const prefs = await StudentPreferences.findOne({ userId: user.id });
+    if (updateErr || !deadline) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+    const prefs = await getStudentPreferences(user.id);
     if (
-      prefs?.automation?.masterEnabled !== false &&
-      prefs?.calendar?.autoSync !== false &&
-      prefs?.calendar?.autoUpdateEvents !== false
+      prefs?.automation_config?.masterEnabled !== false &&
+      prefs?.calendar_config?.autoSync !== false &&
+      prefs?.calendar_config?.autoCreateEvents !== false
     ) {
       try {
-        await syncDeadlineToGoogleCalendar(user.id, deadline);
-      } catch {
-        /* calendar optional */
+        const mappedDeadline = {
+          _id: deadline.id,
+          company: deadline.company,
+          role: deadline.role,
+          deadline: new Date(deadline.deadline_date),
+          links: deadline.links || [],
+          eligibility: deadline.eligibility || "",
+          telegramGroupId: deadline.telegram_group_id || undefined,
+        };
+        await syncDeadlineToGoogleCalendar(user.id, mappedDeadline);
+      } catch (calErr) {
+        console.warn("[PATCH deadline] calendar sync warning:", calErr);
       }
     }
 
-    return NextResponse.json(deadline);
+    // Map output to match frontend camelCase/Mongoose expectations
+    const mappedOutput = {
+      _id: deadline.id,
+      id: deadline.id,
+      company: deadline.company,
+      role: deadline.role,
+      deadline: deadline.deadline_date,
+      deadlineDate: deadline.deadline_date,
+      eligibility: deadline.eligibility,
+      type: deadline.type,
+      links: deadline.links,
+      salary: deadline.salary,
+      status: deadline.status,
+      notes: deadline.notes,
+      confidence: deadline.confidence,
+      isGlobal: deadline.is_global,
+      createdAt: deadline.created_at,
+      updatedAt: deadline.updated_at,
+    };
+
+    return NextResponse.json(mappedOutput);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Error";
     return NextResponse.json({ error: msg }, { status: msg === "Unauthorized" ? 401 : 500 });
@@ -89,17 +122,33 @@ export async function DELETE(_req: Request, { params }: { params: Promise<{ id: 
   try {
     const user = await requireAuth();
     const { id } = await params;
-    await connectDB();
-    const deleted = await Deadline.findOneAndDelete({ _id: id, userId: user.id });
-    if (!deleted) {
+
+    // Delete from deadlines in Supabase
+    const { data: deleted, error: deleteErr } = await supabase
+      .from("deadlines")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", user.id)
+      .select("*")
+      .maybeSingle();
+
+    if (deleteErr || !deleted) {
       return NextResponse.json({ error: "Not found or not owned" }, { status: 404 });
     }
-    await Reminder.deleteMany({ userId: user.id, deadlineId: deleted._id });
+
+    // Delete reminders associated with the deadline
+    await supabase
+      .from("reminders")
+      .delete()
+      .eq("user_id", user.id)
+      .eq("deadline_id", id);
+
     try {
       await removeDeadlineFromGoogleCalendar(user.id, id);
-    } catch {
-      /* optional */
+    } catch (calErr) {
+      console.warn("[DELETE deadline] calendar remove warning:", calErr);
     }
+
     return NextResponse.json({ success: true });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Error";

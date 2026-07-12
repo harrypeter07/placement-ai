@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { connectDB } from "@/lib/mongodb";
-import { StudentPreferences, getDefaultStudentPreferences } from "@/models/StudentPreferences";
+import { supabase } from "@/lib/supabase";
+import { getStudentPreferences } from "@/lib/db-supabase";
 import { requireAuth } from "@/lib/api-auth";
 
 export const runtime = "nodejs";
@@ -21,27 +21,41 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: "Invalid input" }, { status: 400 });
     }
 
-    await connectDB();
-    let prefs = await StudentPreferences.findOne({ userId: user.id });
-    if (!prefs) {
-      prefs = await StudentPreferences.create({ userId: user.id, ...getDefaultStudentPreferences() });
+    const prefs = await getStudentPreferences(user.id);
+    const tgConfig = prefs?.telegram_config || {};
+    const ids = new Set(tgConfig.monitoredGroupIds || []);
+
+    if (parsed.data.enabled) {
+      ids.add(parsed.data.groupId);
+    } else {
+      ids.delete(parsed.data.groupId);
     }
 
-    const ids = new Set(prefs.telegram?.monitoredGroupIds || []);
-    if (parsed.data.enabled) ids.add(parsed.data.groupId);
-    else ids.delete(parsed.data.groupId);
+    const updatedConfig = {
+      ...tgConfig,
+      monitoredGroupIds: [...ids],
+    };
 
-    if (!prefs.telegram) {
-      prefs.telegram = getDefaultStudentPreferences().telegram;
+    // Update preferences in Supabase
+    const { data: updated, error: updateError } = await supabase
+      .from("student_preferences")
+      .update({
+        telegram_config: updatedConfig,
+        updated_at: new Date().toISOString()
+      })
+      .eq("user_id", user.id)
+      .select("*")
+      .single();
+
+    if (updateError || !updated) {
+      console.error("[PATCH groups/monitor] Supabase error:", updateError);
+      return NextResponse.json({ error: "Failed to update settings" }, { status: 500 });
     }
-    prefs.telegram.monitoredGroupIds = [...ids];
-    prefs.markModified("telegram");
-    await prefs.save();
 
     return NextResponse.json({
       groupId: parsed.data.groupId,
       enabled: parsed.data.enabled,
-      monitoredGroupIds: prefs.telegram.monitoredGroupIds,
+      monitoredGroupIds: updated.telegram_config.monitoredGroupIds,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Error";

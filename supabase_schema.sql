@@ -234,3 +234,44 @@ CREATE TABLE IF NOT EXISTS worker_heartbeats (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
+
+-- 15. Student Resumes Table
+CREATE TABLE IF NOT EXISTS student_resumes (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    file_name TEXT NOT NULL,
+    file_url TEXT NOT NULL,
+    ats_score INT DEFAULT 0,
+    skills TEXT[] DEFAULT '{}',
+    missing_skills TEXT[] DEFAULT '{}',
+    suggestions TEXT[] DEFAULT '{}',
+    company_compatibility JSONB DEFAULT '[]'::jsonb,
+    analyzed_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 16. Push Tokens Table
+CREATE TABLE IF NOT EXISTS push_tokens (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    token TEXT UNIQUE NOT NULL,
+    platform TEXT DEFAULT 'web',
+    user_agent TEXT,
+    last_used_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 17. Broadcasts Table
+CREATE TABLE IF NOT EXISTS broadcasts (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    admin_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    title TEXT NOT NULL,
+    message TEXT NOT NULL,
+    company TEXT,
+    deadline TIMESTAMP WITH TIME ZONE,
+    target_role TEXT DEFAULT 'student',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);

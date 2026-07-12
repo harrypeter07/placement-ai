@@ -1,18 +1,20 @@
-import { connectDB } from "@/lib/mongodb";
-import { PushToken } from "@/models/PushToken";
-import type { EscalationLevel } from "@/models/NotificationLog";
+import { supabase } from "@/lib/supabase";
 
 /** Sends FCM via legacy HTTP API when FIREBASE_LEGACY_SERVER_KEY is set */
 export async function sendPushToUser(
   userId: string,
-  payload: { title: string; body: string; url?: string; level?: EscalationLevel }
+  payload: { title: string; body: string; url?: string; level?: string }
 ) {
   const key = process.env.FIREBASE_LEGACY_SERVER_KEY;
   if (!key) return { sent: 0, skipped: true };
 
-  await connectDB();
-  const tokens = await PushToken.find({ userId }).lean();
-  if (!tokens.length) return { sent: 0 };
+  // Query push tokens from Supabase
+  const { data: tokens, error } = await supabase
+    .from("push_tokens")
+    .select("token")
+    .eq("user_id", userId);
+
+  if (error || !tokens || !tokens.length) return { sent: 0 };
 
   let sent = 0;
   for (const t of tokens) {

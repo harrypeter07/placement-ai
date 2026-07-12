@@ -1,30 +1,63 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { connectDB } from "@/lib/mongodb";
-import { Deadline } from "@/models/Deadline";
+import { supabase } from "@/lib/supabase";
 import { requireAuth } from "@/lib/api-auth";
+import { getStudentPreferences } from "@/lib/db-supabase";
+
+export const runtime = "nodejs";
 
 export async function GET(req: Request) {
   try {
     const user = await requireAuth();
-    await connectDB();
     const { searchParams } = new URL(req.url);
     const status = searchParams.get("status");
     const search = searchParams.get("search");
     const sort = searchParams.get("sort") || "deadline";
 
-    const baseOr = [{ userId: user.id }, { isGlobal: true }];
-    const filter: Record<string, unknown> = { $or: baseOr };
-    if (status) filter.status = status;
+    let query = supabase
+      .from("deadlines")
+      .select("*")
+      .or(`user_id.eq.${user.id},is_global.eq.true`);
+
+    if (status) {
+      query = query.eq("status", status);
+    }
     if (search) {
-      filter.$and = [{ $or: baseOr }, { company: { $regex: search, $options: "i" } }];
-      delete filter.$or;
+      query = query.ilike("company", `%${search}%`);
     }
 
-    const deadlines = await Deadline.find(filter).sort(
-      sort === "urgency" ? { deadline: 1 } : { [sort]: 1 }
-    );
-    return NextResponse.json(deadlines);
+    if (sort === "urgency" || sort === "deadline") {
+      query = query.order("deadline_date", { ascending: true });
+    } else {
+      query = query.order("company", { ascending: true });
+    }
+
+    const { data: deadlines, error } = await query;
+    if (error) {
+      console.error("[GET deadlines] Supabase error:", error);
+      return NextResponse.json({ error: "Database error" }, { status: 500 });
+    }
+
+    const mapped = (deadlines || []).map((d) => ({
+      _id: d.id,
+      id: d.id,
+      company: d.company,
+      role: d.role,
+      deadline: d.deadline_date,
+      deadlineDate: d.deadline_date,
+      eligibility: d.eligibility,
+      type: d.type,
+      links: d.links,
+      salary: d.salary,
+      status: d.status,
+      notes: d.notes,
+      confidence: d.confidence,
+      isGlobal: d.is_global,
+      createdAt: d.created_at,
+      updatedAt: d.updated_at,
+    }));
+
+    return NextResponse.json(mapped);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Error";
     return NextResponse.json({ error: msg }, { status: msg === "Unauthorized" ? 401 : 500 });
@@ -48,28 +81,77 @@ export async function POST(req: Request) {
     const body = await req.json();
     const parsed = createSchema.safeParse(body);
     if (!parsed.success) return NextResponse.json({ error: "Invalid input" }, { status: 400 });
-    await connectDB();
-    const deadline = await Deadline.create({
-      ...parsed.data,
-      deadline: new Date(parsed.data.deadline),
-      userId: user.id,
-      status: "pending",
-      confidence: 1,
-    });
+
+    // Insert deadline into Supabase
+    const { data: deadline, error: insertError } = await supabase
+      .from("deadlines")
+      .insert([
+        {
+          company: parsed.data.company,
+          role: parsed.data.role,
+          deadline_date: new Date(parsed.data.deadline).toISOString(),
+          eligibility: parsed.data.eligibility || "",
+          type: parsed.data.type || "full-time",
+          links: parsed.data.links || [],
+          salary: parsed.data.salary || "",
+          notes: parsed.data.notes || "",
+          status: "pending",
+          confidence: 1,
+          is_global: false,
+          user_id: user.id,
+          updated_at: new Date().toISOString(),
+        },
+      ])
+      .select("*")
+      .single();
+
+    if (insertError || !deadline) {
+      console.error("[POST deadlines] Supabase insert error:", insertError);
+      return NextResponse.json({ error: "Database error" }, { status: 500 });
+    }
 
     try {
       const { syncDeadlineToGoogleCalendar } = await import("@/lib/calendar/sync-deadline");
-      const prefs = await import("@/models/StudentPreferences").then((m) =>
-        m.StudentPreferences.findOne({ userId: user.id })
-      );
-      if (prefs?.calendar?.autoSync !== false && prefs?.calendar?.autoCreateEvents !== false) {
-        await syncDeadlineToGoogleCalendar(user.id, deadline);
+      const prefs = await getStudentPreferences(user.id);
+      if (
+        prefs?.calendar_config?.autoSync !== false &&
+        prefs?.calendar_config?.autoCreateEvents !== false
+      ) {
+        const mappedDeadline = {
+          _id: deadline.id,
+          company: deadline.company,
+          role: deadline.role,
+          deadline: new Date(deadline.deadline_date),
+          links: deadline.links || [],
+          eligibility: deadline.eligibility || "",
+          telegramGroupId: deadline.telegram_group_id || undefined,
+        };
+        await syncDeadlineToGoogleCalendar(user.id, mappedDeadline);
       }
-    } catch {
-      /* optional */
+    } catch (calErr) {
+      console.warn("[POST deadlines] calendar sync warning:", calErr);
     }
 
-    return NextResponse.json(deadline, { status: 201 });
+    const mappedOutput = {
+      _id: deadline.id,
+      id: deadline.id,
+      company: deadline.company,
+      role: deadline.role,
+      deadline: deadline.deadline_date,
+      deadlineDate: deadline.deadline_date,
+      eligibility: deadline.eligibility,
+      type: deadline.type,
+      links: deadline.links,
+      salary: deadline.salary,
+      status: deadline.status,
+      notes: deadline.notes,
+      confidence: deadline.confidence,
+      isGlobal: deadline.is_global,
+      createdAt: deadline.created_at,
+      updatedAt: deadline.updated_at,
+    };
+
+    return NextResponse.json(mappedOutput, { status: 201 });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Error";
     return NextResponse.json({ error: msg }, { status: msg === "Unauthorized" ? 401 : 500 });

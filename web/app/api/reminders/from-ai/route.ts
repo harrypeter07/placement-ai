@@ -1,14 +1,11 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { connectDB } from "@/lib/mongodb";
-import { Deadline } from "@/models/Deadline";
-import { Reminder } from "@/models/Reminder";
+import { supabase } from "@/lib/supabase";
 import { requireAuth } from "@/lib/api-auth";
-import { StudentPreferences } from "@/models/StudentPreferences";
+import { getStudentPreferences } from "@/lib/db-supabase";
 import { analyzePlacementForReminders } from "@/lib/ai/reminder-intelligence";
 import { priorityToEscalation } from "@/lib/reminders/escalation";
-import type { EscalationLevel, ReminderPriority } from "@/models/Reminder";
-import { AiAutomationLog } from "@/models/AiAutomationLog";
 
 export const runtime = "nodejs";
 
@@ -34,85 +31,109 @@ export async function POST(req: Request) {
     if (!parsed.success) {
       return NextResponse.json({ error: "Invalid input" }, { status: 400 });
     }
-    await connectDB();
 
-    const prefs = await StudentPreferences.findOne({ userId: user.id });
-    if (prefs?.automation?.aiAutoReminders === false || prefs?.automation?.masterEnabled === false) {
+    const prefs = await getStudentPreferences(user.id);
+    if (prefs?.automation_config?.aiAutoReminders === false || prefs?.automation_config?.masterEnabled === false) {
       return NextResponse.json({ error: "AI auto-reminders disabled" }, { status: 403 });
     }
 
-    const deadline = await Deadline.findOne({
-      _id: parsed.data.deadlineId,
-      $or: [{ userId: user.id }, { isGlobal: true }],
-    });
-    if (!deadline) return NextResponse.json({ error: "Deadline not found" }, { status: 404 });
+    // Query deadline from Supabase
+    const { data: deadline, error: dlErr } = await supabase
+      .from("deadlines")
+      .select("*")
+      .eq("id", parsed.data.deadlineId)
+      .or(`user_id.eq.${user.id},is_global.eq.true`)
+      .maybeSingle();
+
+    if (dlErr || !deadline) return NextResponse.json({ error: "Deadline not found" }, { status: 404 });
 
     const analysis = await analyzePlacementForReminders(parsed.data.message, prefs);
     if (!analysis.shouldRemind || !analysis.isPlacement) {
-      await AiAutomationLog.create({
-        userId: user.id,
+      // Log skipped action in Supabase
+      await supabase.from("ai_automation_logs").insert([{
+        user_id: user.id,
         type: "reminder_skipped",
         summary: "AI chose not to create reminders for this text",
         metadata: { confidence: analysis.confidence },
-      });
+        created_at: new Date().toISOString()
+      }]);
+
       return NextResponse.json({ analysis, created: [] });
     }
 
-    await Reminder.deleteMany({
-      userId: user.id,
-      deadlineId: deadline._id,
-      sent: false,
-      aiSuggested: true,
-    });
+    // Delete existing unsent AI suggested reminders for this deadline
+    await supabase
+      .from("reminders")
+      .delete()
+      .eq("user_id", user.id)
+      .eq("deadline_id", deadline.id)
+      .eq("sent", false)
+      .eq("ai_suggested", true);
 
     const minuteList = analysis.suggestedOffsetsMinutes;
     const created = [];
-    const dl = deadline.deadline.getTime();
+    const dl = new Date(deadline.deadline_date).getTime();
 
     for (const minutes of minuteList) {
       const scheduledAt = new Date(dl - minutes * 60 * 1000);
       if (scheduledAt <= new Date()) continue;
 
-      const offsetPreset = (Object.keys(OFFSET_PRESET_MINUTES).find(
+      const offsetPreset = Object.keys(OFFSET_PRESET_MINUTES).find(
         (k) => k !== "custom" && OFFSET_PRESET_MINUTES[k] === minutes
-      ) || "custom") as "1d" | "6h" | "1h" | "15m" | "custom";
+      ) || "custom";
 
-      const priority = (
+      const priority =
         analysis.urgency === "critical"
           ? "critical"
           : analysis.urgency === "high"
             ? "high"
-            : "medium"
-      ) as ReminderPriority;
+            : "medium";
 
-      const doc = await Reminder.create({
-        userId: user.id,
-        deadlineId: deadline._id,
-        scheduledAt,
+      const payload = {
+        user_id: user.id,
+        deadline_id: deadline.id,
+        scheduled_at: scheduledAt.toISOString(),
         offset: offsetPreset,
-        minutesBeforeDeadline: minutes,
+        minutes_before_deadline: minutes,
         channels: parsed.data.channels,
         title: analysis.notificationTitle,
         message: analysis.notificationMessage,
-        aiSummary: analysis.aiSummary,
+        ai_summary: analysis.aiSummary,
         priority,
         status: "active",
         enabled: true,
-        aiSuggested: true,
+        ai_suggested: true,
         sent: false,
-        escalationLevel: priorityToEscalation(priority) as EscalationLevel,
-        escalationCount: 0,
-        reminderStyle: analysis.reminderStyle,
-      });
-      created.push(doc);
+        escalation_level: priorityToEscalation(priority as any) || "normal",
+        escalation_count: 0,
+        reminder_style: analysis.reminderStyle,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { data: doc, error: insertError } = await supabase
+        .from("reminders")
+        .insert([payload])
+        .select("*")
+        .single();
+
+      if (insertError) {
+        console.error("[POST reminders/from-ai] Supabase insert error:", insertError);
+      } else if (doc) {
+        created.push({
+          ...doc,
+          _id: doc.id,
+        });
+      }
     }
 
-    await AiAutomationLog.create({
-      userId: user.id,
+    // Log created action in Supabase
+    await supabase.from("ai_automation_logs").insert([{
+      user_id: user.id,
       type: "reminder_created",
       summary: `AI created ${created.length} reminder(s) for ${deadline.company}`,
-      metadata: { deadlineId: String(deadline._id), urgency: analysis.urgency },
-    });
+      metadata: { deadlineId: String(deadline.id), urgency: analysis.urgency },
+      created_at: new Date().toISOString()
+    }]);
 
     return NextResponse.json({ analysis, created }, { status: 201 });
   } catch (e) {

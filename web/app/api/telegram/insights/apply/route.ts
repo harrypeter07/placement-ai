@@ -1,11 +1,10 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import mongoose from "mongoose";
-import { connectDB } from "@/lib/mongodb";
+import { supabase } from "@/lib/supabase";
 import { hasValidExtractedDeadline } from "@/lib/insight-utils";
-import { PlacementInsight } from "@/models/PlacementInsight";
-import { StudentPreferences } from "@/models/StudentPreferences";
 import { requireAuth } from "@/lib/api-auth";
+import { getStudentPreferences } from "@/lib/db-supabase";
 import { applySingleInsight } from "@/lib/ai/apply-chat-insights";
 
 export const runtime = "nodejs";
@@ -35,22 +34,36 @@ export async function POST(req: Request) {
 
     const ids = parsed.data.insightIds
       .map((id) => String(id).trim())
-      .filter((id) => mongoose.Types.ObjectId.isValid(id));
+      .filter((id) => id.length > 10);
+
     if (!ids.length) {
       return NextResponse.json({ error: "Invalid insight ids" }, { status: 400 });
     }
 
-    await connectDB();
-    const prefs = await StudentPreferences.findOne({ userId: user.id });
-    const pinDefault = prefs?.telegram?.insightPinToOverview ?? true;
+    const prefs = await getStudentPreferences(user.id);
+    const pinDefault = prefs?.telegram_config?.insightPinToOverview ?? true;
     const pinToOverview = parsed.data.pinToOverview ?? pinDefault;
-    const rows = await PlacementInsight.find({
-      _id: { $in: ids },
-      userId: user.id,
-      status: "draft",
-    }).lean();
 
-    const actionable = rows.filter((r) => hasValidExtractedDeadline(r));
+    // Fetch placement insights from Supabase
+    const { data: rows, error: fetchErr } = await supabase
+      .from("placement_insights")
+      .select("*")
+      .in("id", ids)
+      .eq("user_id", user.id)
+      .eq("status", "draft");
+
+    if (fetchErr) {
+      console.error("[POST insights/apply] Supabase fetch error:", fetchErr);
+      return NextResponse.json({ error: "Database error" }, { status: 500 });
+    }
+
+    // Map extracted_deadline to extractedDeadline for validation
+    const mappedRows = (rows || []).map((r: any) => ({
+      ...r,
+      extractedDeadline: r.extracted_deadline || r.extractedDeadline,
+    }));
+
+    const actionable = mappedRows.filter((r) => hasValidExtractedDeadline(r));
     if (!actionable.length) {
       return NextResponse.json(
         {

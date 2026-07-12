@@ -1,12 +1,9 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { connectDB } from "@/lib/mongodb";
-import { Reminder } from "@/models/Reminder";
-import { Deadline } from "@/models/Deadline";
+import { supabase } from "@/lib/supabase";
 import { requireAuth } from "@/lib/api-auth";
-import { StudentPreferences } from "@/models/StudentPreferences";
-import { AiAutomationLog } from "@/models/AiAutomationLog";
-import type { ReminderOffsetPreset, ReminderPriority, EscalationLevel } from "@/models/Reminder";
+import { getStudentPreferences } from "@/lib/db-supabase";
 import { priorityToEscalation } from "@/lib/reminders/escalation";
 
 export const runtime = "nodejs";
@@ -43,15 +40,51 @@ const postSchema = z.object({
 export async function GET() {
   try {
     const user = await requireAuth();
-    await connectDB();
-    const reminders = await Reminder.find({ userId: user.id })
-      .populate("deadlineId")
-      .sort({ scheduledAt: 1 })
-      .lean();
 
-    const enriched = reminders.map((r) => ({
-      ...r,
-      effectiveMinutesBefore: resolveMinutes(r as { minutesBeforeDeadline?: number; offset?: string }),
+    // Query reminders from Supabase with embedded deadline details
+    const { data: reminders, error: fetchErr } = await supabase
+      .from("reminders")
+      .select("*, deadline:deadlines(*)")
+      .eq("user_id", user.id)
+      .order("scheduled_at", { ascending: true });
+
+    if (fetchErr) {
+      console.error("[GET reminders] Supabase error:", fetchErr);
+      return NextResponse.json({ error: "Database error" }, { status: 500 });
+    }
+
+    const enriched = (reminders || []).map((r: any) => ({
+      _id: r.id,
+      id: r.id,
+      userId: r.user_id,
+      deadlineId: r.deadline ? {
+        _id: r.deadline.id,
+        id: r.deadline.id,
+        company: r.deadline.company,
+        role: r.deadline.role,
+        deadline: r.deadline.deadline_date,
+        status: r.deadline.status,
+      } : null,
+      scheduledAt: r.scheduled_at,
+      offset: r.offset,
+      minutesBeforeDeadline: r.minutes_before_deadline,
+      channels: r.channels,
+      title: r.title,
+      message: r.message,
+      aiSummary: r.ai_summary,
+      priority: r.priority,
+      status: r.status,
+      enabled: r.enabled,
+      aiSuggested: r.ai_suggested,
+      sent: r.sent,
+      repeatRule: r.repeat_rule,
+      escalationLevel: r.escalation_level,
+      escalationCount: r.escalation_count,
+      reminderStyle: r.reminder_style,
+      effectiveMinutesBefore: resolveMinutes({
+        minutesBeforeDeadline: r.minutes_before_deadline,
+        offset: r.offset,
+      }),
     }));
 
     return NextResponse.json(enriched);
@@ -69,86 +102,106 @@ export async function POST(req: Request) {
     if (!parsed.success) {
       return NextResponse.json({ error: "Invalid input", details: parsed.error.flatten() }, { status: 400 });
     }
-    await connectDB();
 
-    const prefs = await StudentPreferences.findOne({ userId: user.id });
-    if (prefs?.automation?.masterEnabled === false) {
+    const prefs = await getStudentPreferences(user.id);
+    if (prefs?.automation_config?.masterEnabled === false) {
       return NextResponse.json({ error: "Automation is disabled" }, { status: 403 });
     }
 
-    const deadline = await Deadline.findOne({
-      _id: parsed.data.deadlineId,
-      $or: [{ userId: user.id }, { isGlobal: true }],
-    });
-    if (!deadline) {
+    // Query deadline from Supabase
+    const { data: deadline, error: deadlineErr } = await supabase
+      .from("deadlines")
+      .select("*")
+      .eq("id", parsed.data.deadlineId)
+      .or(`user_id.eq.${user.id},is_global.eq.true`)
+      .maybeSingle();
+
+    if (deadlineErr || !deadline) {
       return NextResponse.json({ error: "Deadline not found" }, { status: 404 });
     }
 
-    await Reminder.deleteMany({
-      userId: user.id,
-      deadlineId: deadline._id,
-      sent: false,
-      status: { $in: ["active", "paused", "snoozed"] },
-    });
+    // Delete existing active unsent reminders for this deadline
+    await supabase
+      .from("reminders")
+      .delete()
+      .eq("user_id", user.id)
+      .eq("deadline_id", deadline.id)
+      .eq("sent", false)
+      .in("status", ["active", "paused", "snoozed"]);
 
     const minuteList: number[] =
       parsed.data.customMinutesBefore?.length && parsed.data.customMinutesBefore.length > 0
         ? [...new Set(parsed.data.customMinutesBefore)]
         : (parsed.data.offsets?.length
             ? [...new Set(parsed.data.offsets.map((o) => OFFSET_PRESET_MINUTES[o]))]
-            : prefs?.reminders?.defaultOffsetsMinutes?.length
-              ? [...new Set(prefs.reminders.defaultOffsetsMinutes)]
+            : prefs?.reminders_config?.defaultOffsetsMinutes?.length
+              ? [...new Set(prefs.reminders_config.defaultOffsetsMinutes as number[])]
               : [24 * 60, 6 * 60, 60]);
 
-    const priority = (parsed.data.priority || "medium") as ReminderPriority;
-    const titleBase =
-      parsed.data.title ||
-      `${deadline.company} — ${deadline.role}`;
+    const priority = parsed.data.priority || "medium";
+    const titleBase = parsed.data.title || `${deadline.company} — ${deadline.role}`;
     const messageBase =
       parsed.data.message ||
-      `Deadline: ${deadline.deadline.toISOString().slice(0, 10)}. Don't miss this opportunity.`;
+      `Deadline: ${new Date(deadline.deadline_date).toISOString().slice(0, 10)}. Don't miss this opportunity.`;
 
     const created = [];
-    const dl = deadline.deadline.getTime();
+    const dl = new Date(deadline.deadline_date).getTime();
 
     for (const minutes of minuteList) {
       const scheduledAt = new Date(dl - minutes * 60 * 1000);
       if (scheduledAt <= new Date()) continue;
 
-      const offsetPreset = (Object.entries(OFFSET_PRESET_MINUTES).find(([, v]) => v === minutes)?.[0] ||
-        "custom") as ReminderOffsetPreset;
+      const offsetPreset = Object.entries(OFFSET_PRESET_MINUTES).find(([, v]) => v === minutes)?.[0] || "custom";
 
-      const escalationLevel = (priorityToEscalation(priority) ||
-        prefs?.reminders?.defaultEscalation ||
-        "normal") as EscalationLevel;
+      const escalationLevel =
+        priorityToEscalation(priority as any) ||
+        prefs?.reminders_config?.defaultEscalation ||
+        "normal";
 
-      const doc = await Reminder.create({
-        userId: user.id,
-        deadlineId: deadline._id,
-        scheduledAt,
-        offset: offsetPreset === "custom" ? "custom" : (offsetPreset as ReminderOffsetPreset),
-        minutesBeforeDeadline: minutes,
+      const payload = {
+        user_id: user.id,
+        deadline_id: deadline.id,
+        scheduled_at: scheduledAt.toISOString(),
+        offset: offsetPreset === "custom" ? "custom" : offsetPreset,
+        minutes_before_deadline: minutes,
         channels: parsed.data.channels,
         title: titleBase,
         message: messageBase,
         priority,
         status: "active",
         enabled: true,
-        aiSuggested: parsed.data.aiSuggested ?? false,
+        ai_suggested: parsed.data.aiSuggested ?? false,
         sent: false,
-        escalationLevel,
-        escalationCount: 0,
-        reminderStyle: priority === "critical" || priority === "high" ? "aggressive" : "balanced",
-      });
-      created.push(doc);
+        escalation_level: escalationLevel,
+        escalation_count: 0,
+        reminder_style: priority === "critical" || priority === "high" ? "aggressive" : "balanced",
+        updated_at: new Date().toISOString(),
+      };
+
+      const { data: doc, error: insertError } = await supabase
+        .from("reminders")
+        .insert([payload])
+        .select("*")
+        .single();
+
+      if (insertError) {
+        console.error("[POST reminders] Supabase insert error:", insertError);
+      } else if (doc) {
+        created.push({
+          ...doc,
+          _id: doc.id,
+        });
+      }
     }
 
-    await AiAutomationLog.create({
-      userId: user.id,
+    // Log automation decisions in Supabase
+    await supabase.from("ai_automation_logs").insert([{
+      user_id: user.id,
       type: "reminder_created",
       summary: `Created ${created.length} reminder(s) for ${deadline.company}`,
-      metadata: { deadlineId: String(deadline._id) },
-    });
+      metadata: { deadlineId: String(deadline.id) },
+      created_at: new Date().toISOString()
+    }]);
 
     return NextResponse.json(created, { status: 201 });
   } catch (e) {

@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import mongoose from "mongoose";
-import { connectDB } from "@/lib/mongodb";
-import { PlacementInsight } from "@/models/PlacementInsight";
+import { supabase } from "@/lib/supabase";
 import { requireAuth } from "@/lib/api-auth";
 
 export const runtime = "nodejs";
@@ -24,18 +22,26 @@ export async function POST(req: Request) {
       );
     }
 
-    const ids = parsed.data.insightIds.filter((id) => mongoose.Types.ObjectId.isValid(id));
+    const ids = parsed.data.insightIds.filter((id) => id.length > 10);
     if (!ids.length) {
       return NextResponse.json({ error: "Invalid insight ids" }, { status: 400 });
     }
 
-    await connectDB();
-    const result = await PlacementInsight.updateMany(
-      { _id: { $in: ids }, userId: user.id, status: "draft" },
-      { $set: { status: "dismissed" } }
-    );
+    // Dismiss insights in Supabase
+    const { data, error } = await supabase
+      .from("placement_insights")
+      .update({ status: "dismissed", updated_at: new Date().toISOString() })
+      .in("id", ids)
+      .eq("user_id", user.id)
+      .eq("status", "draft")
+      .select("id");
 
-    return NextResponse.json({ ok: true, dismissed: result.modifiedCount });
+    if (error) {
+      console.error("[POST insights/dismiss] Supabase error:", error);
+      return NextResponse.json({ error: "Database error" }, { status: 500 });
+    }
+
+    return NextResponse.json({ ok: true, dismissed: data?.length || 0 });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Error";
     return NextResponse.json({ error: msg }, { status: msg === "Unauthorized" ? 401 : 500 });

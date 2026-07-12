@@ -1,7 +1,5 @@
 import { google } from "googleapis";
-import { connectDB } from "@/lib/mongodb";
-import { User } from "@/models/User";
-import type { IDeadline } from "@/models/Deadline";
+import { supabase } from "@/lib/supabase";
 
 const CALLBACK_PATH = "/api/auth/callback/google";
 
@@ -18,36 +16,50 @@ export async function getOAuth2Client() {
 }
 
 export async function getCalendarClientForUser(userId: string) {
-  await connectDB();
   const oauth2 = await getOAuth2Client();
   if (!oauth2) return null;
 
-  const user = await User.findById(userId).select(
-    "googleCalendarRefreshToken googleCalendarAccessToken googleCalendarAccessTokenExpires"
-  );
-  if (!user?.googleCalendarRefreshToken && !user?.googleCalendarAccessToken) {
+  const { data: user, error: fetchError } = await supabase
+    .from("users")
+    .select("google_calendar_refresh_token, google_calendar_access_token, google_calendar_expires_at")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (fetchError || !user || (!user.google_calendar_refresh_token && !user.google_calendar_access_token)) {
     return null;
   }
 
   oauth2.setCredentials({
-    refresh_token: user.googleCalendarRefreshToken || undefined,
-    access_token: user.googleCalendarAccessToken || undefined,
-    expiry_date: user.googleCalendarAccessTokenExpires,
+    refresh_token: user.google_calendar_refresh_token || undefined,
+    access_token: user.google_calendar_access_token || undefined,
+    expiry_date: user.google_calendar_expires_at ? Number(user.google_calendar_expires_at) : undefined,
   });
 
   oauth2.on("tokens", async (tokens) => {
-    await User.findByIdAndUpdate(userId, {
-      ...(tokens.access_token && { googleCalendarAccessToken: tokens.access_token }),
-      ...(tokens.expiry_date != null && { googleCalendarAccessTokenExpires: tokens.expiry_date }),
-      ...(tokens.refresh_token && { googleCalendarRefreshToken: tokens.refresh_token }),
-    });
+    const calUpdate: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    };
+    if (tokens.access_token) {
+      calUpdate.google_calendar_access_token = tokens.access_token;
+    }
+    if (tokens.expiry_date != null) {
+      calUpdate.google_calendar_expires_at = tokens.expiry_date;
+    }
+    if (tokens.refresh_token) {
+      calUpdate.google_calendar_refresh_token = tokens.refresh_token;
+    }
+
+    await supabase
+      .from("users")
+      .update(calUpdate)
+      .eq("id", userId);
   });
 
   return google.calendar({ version: "v3", auth: oauth2 });
 }
 
 export function buildDeadlineEventBody(
-  deadline: Pick<IDeadline, "company" | "role" | "deadline" | "links" | "eligibility">,
+  deadline: { company: string; role: string; deadline: Date | string; links?: string[]; eligibility?: string },
   timeZone: string
 ) {
   const start = new Date(deadline.deadline);
@@ -70,7 +82,7 @@ export function buildDeadlineEventBody(
 
 export async function insertCalendarEvent(
   userId: string,
-  deadline: Pick<IDeadline, "company" | "role" | "deadline" | "links" | "eligibility">,
+  deadline: { company: string; role: string; deadline: Date | string; links?: string[]; eligibility?: string },
   timeZone: string
 ) {
   const cal = await getCalendarClientForUser(userId);
@@ -87,7 +99,7 @@ export async function insertCalendarEvent(
 export async function patchCalendarEvent(
   userId: string,
   eventId: string,
-  deadline: Pick<IDeadline, "company" | "role" | "deadline" | "links" | "eligibility">,
+  deadline: { company: string; role: string; deadline: Date | string; links?: string[]; eligibility?: string },
   timeZone: string
 ) {
   const cal = await getCalendarClientForUser(userId);

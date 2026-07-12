@@ -1,10 +1,8 @@
-
 import type { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
-import { connectDB } from "@/lib/mongodb";
-import { User } from "@/models/User";
+import { supabase } from "@/lib/supabase";
 import type { UserRole } from "@/types";
 
 declare module "next-auth" {
@@ -83,19 +81,20 @@ export const authOptions: NextAuthOptions = {
             throw new Error("Missing credentials");
           }
 
-          await connectDB();
+          // Fetch user from Supabase
+          const { data: user, error } = await supabase
+            .from("users")
+            .select("id, name, email, password_hash, image, role")
+            .eq("email", credentials.email.toLowerCase().trim())
+            .maybeSingle();
 
-          const user = await User.findOne({
-            email: credentials.email,
-          });
-
-          if (!user || !user.password) {
+          if (error || !user || !user.password_hash) {
             throw new Error("Invalid email or password");
           }
 
           const isValid = await bcrypt.compare(
             credentials.password,
-            user.password
+            user.password_hash
           );
 
           if (!isValid) {
@@ -103,11 +102,11 @@ export const authOptions: NextAuthOptions = {
           }
 
           return {
-            id: user._id.toString(),
+            id: user.id,
             name: user.name,
             email: user.email,
             image: user.image || null,
-            role: user.role,
+            role: user.role as UserRole,
           };
         } catch (error) {
           console.error("Authorize error:", error);
@@ -120,44 +119,71 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async signIn({ user, account }) {
       try {
-        await connectDB();
-
         if (account?.provider === "google") {
           const emailRaw = user.email || "";
           const emailNorm = emailRaw.toLowerCase().trim();
-          const existingUser = await User.findOne({
-            email: { $regex: new RegExp(`^${emailRaw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i") },
-          });
+
+          // Check if email already registered in Supabase
+          const { data: existingUser, error: fetchError } = await supabase
+            .from("users")
+            .select("id, role")
+            .eq("email", emailNorm)
+            .maybeSingle();
+
+          if (fetchError) throw fetchError;
+
+          let userId = "";
+          let userRole = "student";
 
           if (!existingUser) {
-            const createdUser = await User.create({
-              name: user.name,
-              email: emailNorm || emailRaw,
-              image: user.image,
-              role: "student",
-            });
+            // Create user in Supabase
+            const { data: createdUser, error: insertError } = await supabase
+              .from("users")
+              .insert([
+                {
+                  name: user.name || "Google User",
+                  email: emailNorm,
+                  image: user.image || null,
+                  role: "student",
+                  updated_at: new Date().toISOString(),
+                },
+              ])
+              .select("id, role")
+              .single();
 
-            user.id = createdUser._id.toString();
-            user.role = createdUser.role;
+            if (insertError) throw insertError;
+            userId = createdUser.id;
+            userRole = createdUser.role;
           } else {
-            user.id = existingUser._id.toString();
-            user.role = existingUser.role;
+            userId = existingUser.id;
+            userRole = existingUser.role;
           }
 
-          const calUpdate: Record<string, string | number | boolean | undefined> = {
-            googleCalendarConnected: true,
+          user.id = userId;
+          user.role = userRole as UserRole;
+
+          // Update Google Calendar tokens in Supabase
+          const calUpdate: Record<string, unknown> = {
+            google_calendar_connected: true,
+            updated_at: new Date().toISOString(),
           };
           if (account.refresh_token) {
-            calUpdate.googleCalendarRefreshToken = account.refresh_token;
+            calUpdate.google_calendar_refresh_token = account.refresh_token;
           }
           if (account.access_token) {
-            calUpdate.googleCalendarAccessToken = account.access_token;
+            calUpdate.google_calendar_access_token = account.access_token;
           }
           const acc = account as { expires_at?: number };
           if (acc.expires_at) {
-            calUpdate.googleCalendarAccessTokenExpires = acc.expires_at * 1000;
+            calUpdate.google_calendar_expires_at = acc.expires_at * 1000;
           }
-          await User.findByIdAndUpdate(user.id, calUpdate);
+
+          const { error: updateError } = await supabase
+            .from("users")
+            .update(calUpdate)
+            .eq("id", userId);
+
+          if (updateError) throw updateError;
         }
 
         return true;
@@ -174,47 +200,50 @@ export const authOptions: NextAuthOptions = {
         }
 
         if (account?.provider === "google") {
-          await connectDB();
           const emailRaw =
             (typeof user?.email === "string" && user.email) || (typeof token.email === "string" && token.email);
           if (emailRaw) {
-            const escaped = emailRaw.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-            const calUpdate: Record<string, string | number | boolean> = {
-              googleCalendarConnected: true,
+            const emailNorm = emailRaw.toLowerCase().trim();
+            const calUpdate: Record<string, unknown> = {
+              google_calendar_connected: true,
+              updated_at: new Date().toISOString(),
             };
             if (account.refresh_token) {
-              calUpdate.googleCalendarRefreshToken = account.refresh_token;
+              calUpdate.google_calendar_refresh_token = account.refresh_token;
             }
             if (account.access_token) {
-              calUpdate.googleCalendarAccessToken = account.access_token;
+              calUpdate.google_calendar_access_token = account.access_token;
             }
             const acc = account as { expires_at?: number };
             if (acc.expires_at) {
-              calUpdate.googleCalendarAccessTokenExpires = acc.expires_at * 1000;
+              calUpdate.google_calendar_expires_at = acc.expires_at * 1000;
             }
 
-            const dbUser = await User.findOneAndUpdate(
-              { email: { $regex: new RegExp(`^${escaped}$`, "i") } },
-              { $set: calUpdate },
-              { new: true }
-            );
+            const { data: dbUser, error: updateError } = await supabase
+              .from("users")
+              .update(calUpdate)
+              .eq("email", emailNorm)
+              .select("id, role")
+              .maybeSingle();
 
-            if (dbUser) {
-              token.id = dbUser._id.toString();
-              token.role = dbUser.role;
+            if (!updateError && dbUser) {
+              token.id = dbUser.id;
+              token.role = dbUser.role as UserRole;
             }
           }
         } else if (user) {
           token.id = user.id;
           token.role = user.role;
         } else if (token.email && !token.id) {
-          await connectDB();
-          const t = String(token.email);
-          const esc = t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-          const dbUser = await User.findOne({ email: { $regex: new RegExp(`^${esc}$`, "i") } }).select("_id role");
+          const { data: dbUser } = await supabase
+            .from("users")
+            .select("id, role")
+            .eq("email", String(token.email).toLowerCase().trim())
+            .maybeSingle();
+
           if (dbUser) {
-            token.id = dbUser._id.toString();
-            token.role = dbUser.role;
+            token.id = dbUser.id;
+            token.role = dbUser.role as UserRole;
           }
         }
 
@@ -240,4 +269,3 @@ export const authOptions: NextAuthOptions = {
     },
   },
 };
-

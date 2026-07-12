@@ -1,5 +1,4 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import type { IStudentPreferences } from "@/models/StudentPreferences";
 import { getGeminiApiKey, isGeminiConfigured } from "@/lib/ai/gemini-env";
 
 export type ReminderStyle = "gentle" | "balanced" | "aggressive";
@@ -60,9 +59,10 @@ function normalizeUrgency(u: unknown): ReminderAnalysisResult["urgency"] {
 
 export async function analyzePlacementForReminders(
   message: string,
-  prefs?: Pick<IStudentPreferences, "ai"> | null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  prefs?: any
 ): Promise<ReminderAnalysisResult> {
-  const sensitivity = prefs?.ai?.urgencySensitivity || "medium";
+  const sensitivity = prefs?.ai_config?.urgencySensitivity || prefs?.ai?.urgencySensitivity || "medium";
 
   if (!isGeminiConfigured()) {
     const urgent = /tonight|today|hours?|closing|last date|eod|11:59|23:59/i.test(message);

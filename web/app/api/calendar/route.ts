@@ -1,26 +1,23 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from "next/server";
-import { connectDB } from "@/lib/mongodb";
-import { User } from "@/models/User";
-import { Deadline } from "@/models/Deadline";
-import { CalendarEventMap } from "@/models/CalendarEventMap";
+import { supabase } from "@/lib/supabase";
 import { requireAuth } from "@/lib/api-auth";
-import { StudentPreferences } from "@/models/StudentPreferences";
+import { getStudentPreferences } from "@/lib/db-supabase";
 import { syncDeadlineToGoogleCalendar } from "@/lib/calendar/sync-deadline";
 import { listPrimaryCalendarEvents } from "@/lib/calendar/google-calendar";
 
 export const runtime = "nodejs";
 
 type CalendarUserFields = {
-  googleCalendarConnected?: boolean;
-  googleCalendarRefreshToken?: string;
-  googleCalendarAccessToken?: string;
-  googleCalendarAccessTokenExpires?: Date;
+  google_calendar_connected?: boolean;
+  google_calendar_refresh_token?: string;
+  google_calendar_access_token?: string;
+  google_calendar_expires_at?: string | number | null;
 };
 
 export async function GET(req: Request) {
   try {
     const user = await requireAuth();
-    await connectDB();
 
     const { searchParams } = new URL(req.url);
     const fromQ = searchParams.get("from");
@@ -36,22 +33,26 @@ export async function GET(req: Request) {
       timeMax = new Date(Date.now() + 21 * 24 * 60 * 60 * 1000);
     }
 
-    const prefs = await StudentPreferences.findOne({ userId: user.id });
+    const prefs = await getStudentPreferences(user.id);
     const timeZone = prefs?.timezone || "Asia/Kolkata";
 
-    const dbUser = await User.findById(user.id).select(
-      "googleCalendarConnected googleCalendarRefreshToken googleCalendarAccessToken googleCalendarAccessTokenExpires"
-    );
-    const u = (dbUser?.toObject() || {}) as CalendarUserFields;
-    let connected = !!(u.googleCalendarRefreshToken || u.googleCalendarAccessToken);
-    if (!connected && u.googleCalendarConnected) {
+    // Query user Google Calendar fields from Supabase
+    const { data: dbUser } = await supabase
+      .from("users")
+      .select("google_calendar_connected, google_calendar_refresh_token, google_calendar_access_token, google_calendar_expires_at")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    const u = (dbUser || {}) as CalendarUserFields;
+    let connected = !!(u.google_calendar_refresh_token || u.google_calendar_access_token);
+    if (!connected && u.google_calendar_connected) {
       connected = true;
     }
 
     let googleEvents: Awaited<ReturnType<typeof listPrimaryCalendarEvents>> = [];
     let googleFetchError: string | null = null;
 
-    if (u.googleCalendarRefreshToken || u.googleCalendarAccessToken) {
+    if (u.google_calendar_refresh_token || u.google_calendar_access_token) {
       try {
         googleEvents = await listPrimaryCalendarEvents(user.id, {
           timeMin,
@@ -67,34 +68,43 @@ export async function GET(req: Request) {
     const rangePadStart = new Date(timeMin.getTime() - 24 * 60 * 60 * 1000);
     const rangePadEnd = new Date(timeMax.getTime() + 24 * 60 * 60 * 1000);
 
-    const deadlines = await Deadline.find({
-      $or: [{ userId: user.id }, { isGlobal: true }],
-      deadline: { $gte: rangePadStart, $lte: rangePadEnd },
-    })
-      .sort({ deadline: 1 })
-      .limit(200)
-      .lean();
+    // Fetch deadlines from Supabase
+    const { data: deadlines, error: dbErr } = await supabase
+      .from("deadlines")
+      .select("*")
+      .or(`user_id.eq.${user.id},is_global.eq.true`)
+      .gte("deadline_date", rangePadStart.toISOString())
+      .lte("deadline_date", rangePadEnd.toISOString())
+      .order("deadline_date", { ascending: true })
+      .limit(200);
 
-    const maps = await CalendarEventMap.find({ userId: user.id }).lean();
-    const mapByDeadline = new Map(maps.map((m) => [String(m.deadlineId), m.googleEventId]));
+    if (dbErr) throw dbErr;
+
+    // Fetch calendar event mappings from Supabase
+    const { data: maps } = await supabase
+      .from("calendar_event_maps")
+      .select("*")
+      .eq("user_id", user.id);
+
+    const mapByDeadline = new Map((maps || []).map((m) => [String(m.deadline_id), m.google_event_id]));
     const syncedGoogleIds = new Set(
-      maps.map((m) => m.googleEventId).filter((id): id is string => typeof id === "string" && id.length > 0)
+      (maps || []).map((m) => m.google_event_id).filter((id): id is string => typeof id === "string" && id.length > 0)
     );
 
-    const events = deadlines.map((d) => ({
-      id: String(d._id),
+    const events = (deadlines || []).map((d) => ({
+      id: String(d.id),
       source: "placemint" as const,
       title: `${d.company} — ${d.role}`,
       company: d.company,
       role: d.role,
-      start: d.deadline instanceof Date ? d.deadline.toISOString() : String(d.deadline),
+      start: d.deadline_date,
       status: d.status,
       eligibility: d.eligibility ?? "",
       notes: d.notes ?? "",
       links: d.links ?? [],
-      isGlobal: !!d.isGlobal,
-      userId: d.userId ? String(d.userId) : null,
-      googleEventId: mapByDeadline.get(String(d._id)) ?? null,
+      isGlobal: !!d.is_global,
+      userId: d.user_id ? String(d.user_id) : null,
+      googleEventId: mapByDeadline.get(String(d.id)) ?? null,
     }));
 
     const googleMapped = googleEvents
@@ -143,7 +153,6 @@ export async function POST(req: Request) {
   try {
     const user = await requireAuth();
     const { action } = await req.json();
-    await connectDB();
 
     if (action === "connect") {
       return NextResponse.json({
@@ -155,36 +164,52 @@ export async function POST(req: Request) {
     }
 
     if (action === "sync") {
-      const prefs = await StudentPreferences.findOne({ userId: user.id });
-      if (prefs?.automation?.masterEnabled === false) {
+      const prefs = await getStudentPreferences(user.id);
+      if (prefs?.automation_config?.masterEnabled === false) {
         return NextResponse.json({ error: "Automation is turned off" }, { status: 403 });
       }
-      if (prefs?.calendar?.autoSync === false) {
+      if (prefs?.calendar_config?.autoSync === false) {
         return NextResponse.json({ error: "Calendar auto-sync disabled in settings" }, { status: 403 });
       }
 
-      const dbUser = await User.findById(user.id).select(
-        "googleCalendarRefreshToken googleCalendarAccessToken googleCalendarConnected"
-      );
-      const u = (dbUser?.toObject() || {}) as CalendarUserFields;
-      if (!u.googleCalendarRefreshToken && !u.googleCalendarAccessToken) {
+      // Query Google Calendar tokens from Supabase user
+      const { data: dbUser } = await supabase
+        .from("users")
+        .select("google_calendar_refresh_token, google_calendar_access_token")
+        .eq("id", user.id)
+        .maybeSingle();
+
+      const u = (dbUser || {}) as CalendarUserFields;
+      if (!u.google_calendar_refresh_token && !u.google_calendar_access_token) {
         return NextResponse.json(
           { error: "Google Calendar not connected. Sign in with Google to link your calendar." },
           { status: 400 }
         );
       }
 
-      const deadlines = await Deadline.find({
-        $or: [{ userId: user.id }, { isGlobal: true }],
-        deadline: { $gte: new Date() },
-      }).lean();
+      // Fetch upcoming deadlines from Supabase
+      const { data: deadlines } = await supabase
+        .from("deadlines")
+        .select("*")
+        .or(`user_id.eq.${user.id},is_global.eq.true`)
+        .gte("deadline_date", new Date().toISOString());
 
       let created = 0;
       let updated = 0;
       let errors = 0;
-      for (const d of deadlines) {
+
+      for (const d of (deadlines || [])) {
         try {
-          const r = await syncDeadlineToGoogleCalendar(user.id, d);
+          const mappedDeadline = {
+            _id: d.id,
+            company: d.company,
+            role: d.role,
+            deadline: new Date(d.deadline_date),
+            links: d.links || [],
+            eligibility: d.eligibility || "",
+            telegramGroupId: d.telegram_group_id || undefined,
+          };
+          const r = await syncDeadlineToGoogleCalendar(user.id, mappedDeadline);
           if ("action" in r && r.action === "created") created += 1;
           else if ("action" in r && r.action === "updated") updated += 1;
           else if ("error" in r) errors += 1;
@@ -194,11 +219,11 @@ export async function POST(req: Request) {
       }
 
       return NextResponse.json({
-        synced: deadlines.length,
+        synced: (deadlines || []).length,
         created,
         updated,
         errors,
-        message: `Synced ${deadlines.length} deadline(s) to Google Calendar`,
+        message: `Synced ${(deadlines || []).length} deadline(s) to Google Calendar`,
       });
     }
 

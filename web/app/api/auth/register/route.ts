@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
-import { connectDB } from "@/lib/mongodb";
-import { User } from "@/models/User";
+import { supabase } from "@/lib/supabase";
 
 const schema = z.object({
   name: z.string().min(2),
@@ -18,15 +17,41 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid input" }, { status: 400 });
     }
     const { name, email, password } = parsed.data;
-    await connectDB();
-    const existing = await User.findOne({ email });
+
+    // Check if email already registered in Supabase
+    const { data: existing } = await supabase
+      .from("users")
+      .select("id")
+      .eq("email", email.toLowerCase().trim())
+      .maybeSingle();
+
     if (existing) {
       return NextResponse.json({ error: "Email already registered" }, { status: 409 });
     }
+
     const hashed = await bcrypt.hash(password, 12);
-    await User.create({ name, email, password: hashed, role: "student" });
+
+    // Create user in Supabase users table
+    const { error: insertError } = await supabase
+      .from("users")
+      .insert([
+        {
+          name,
+          email: email.toLowerCase().trim(),
+          password_hash: hashed,
+          role: "student",
+          updated_at: new Date().toISOString(),
+        },
+      ]);
+
+    if (insertError) {
+      console.error("[register] Supabase insert error:", insertError);
+      return NextResponse.json({ error: "Failed to create account" }, { status: 500 });
+    }
+
     return NextResponse.json({ success: true });
-  } catch {
+  } catch (err) {
+    console.error("[register] exception:", err);
     return NextResponse.json({ error: "Server error" }, { status: 500 });
   }
 }

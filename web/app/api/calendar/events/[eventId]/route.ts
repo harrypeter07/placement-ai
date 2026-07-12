@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { connectDB } from "@/lib/mongodb";
-import { StudentPreferences } from "@/models/StudentPreferences";
 import { requireAuth } from "@/lib/api-auth";
+import { getStudentPreferences } from "@/lib/db-supabase";
 import {
   deleteCalendarEvent,
   getPrimaryCalendarEvent,
@@ -47,8 +46,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ eventI
     if (!parsed.success) {
       return NextResponse.json({ error: "Invalid input", details: parsed.error.flatten() }, { status: 400 });
     }
-    await connectDB();
-    const prefs = await StudentPreferences.findOne({ userId: user.id });
+
+    const prefs = await getStudentPreferences(user.id);
     const timeZone = prefs?.timezone || "Asia/Kolkata";
 
     const r = await updatePrimaryCalendarEvent(user.id, eventId, {
