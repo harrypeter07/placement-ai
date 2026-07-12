@@ -11,7 +11,7 @@ from playwright.async_api import async_playwright
 from db_supabase import SupabaseDb
 import listener
 
-app = FastAPI(title="PlaceMint Combined Backend (Telegram + Playwright)")
+app = FastAPI(title="PlaceMint Combined Backend Service")
 
 # Create screenshots directory and mount it statically
 os.makedirs("/app/screenshots", exist_ok=True)
