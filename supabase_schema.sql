@@ -190,6 +190,10 @@ CREATE TABLE IF NOT EXISTS telegram_auth_pendings (
     phone TEXT NOT NULL,
     phone_code_hash TEXT,
     step TEXT NOT NULL DEFAULT 'phone',
+    auth_session_string TEXT,
+    expires_at TIMESTAMP WITH TIME ZONE,
+    last_sent_at TIMESTAMP WITH TIME ZONE,
+    send_count INT DEFAULT 1,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
@@ -201,6 +205,32 @@ CREATE TABLE IF NOT EXISTS telegram_groups (
     title TEXT NOT NULL,
     username TEXT,
     active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 13. Telegram Worker Sessions Table
+CREATE TABLE IF NOT EXISTS telegram_worker_sessions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    key TEXT UNIQUE NOT NULL DEFAULT 'default',
+    session_string TEXT,
+    telethon_session_string TEXT,
+    phone_number TEXT,
+    telegram_username TEXT,
+    display_name TEXT,
+    connected_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+
+-- 14. Worker Heartbeats Table
+CREATE TABLE IF NOT EXISTS worker_heartbeats (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    service TEXT UNIQUE NOT NULL,
+    status TEXT NOT NULL,
+    groups_monitored INT DEFAULT 0,
+    last_error TEXT,
+    detail_log TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );

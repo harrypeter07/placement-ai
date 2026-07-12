@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { connectDB } from "@/lib/mongodb";
-import { StudentPreferences, getDefaultStudentPreferences } from "@/models/StudentPreferences";
-import { AiAutomationLog } from "@/models/AiAutomationLog";
+import { supabase } from "@/lib/supabase";
 import { requireAuth } from "@/lib/api-auth";
 
 export const runtime = "nodejs";
@@ -20,19 +18,40 @@ const automationPatch = z
 export async function GET() {
   try {
     const user = await requireAuth();
-    await connectDB();
-    let prefs = await StudentPreferences.findOne({ userId: user.id });
-    if (!prefs) {
-      prefs = await StudentPreferences.create({ userId: user.id, ...getDefaultStudentPreferences() });
-    }
-    const logs = await AiAutomationLog.find({ userId: user.id })
-      .sort({ createdAt: -1 })
-      .limit(80)
-      .lean();
+    
+    // Fetch preferences from Supabase
+    const { data: prefs } = await supabase
+      .from("student_preferences")
+      .select("automation_config")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    // Fetch automation logs from Supabase
+    const { data: logs } = await supabase
+      .from("ai_automation_logs")
+      .select("*")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(80);
+
+    const mappedLogs = (logs || []).map((l) => ({
+      _id: l.id,
+      userId: l.user_id,
+      type: l.type,
+      summary: l.summary,
+      metadata: l.metadata,
+      createdAt: l.created_at,
+    }));
 
     return NextResponse.json({
-      automation: prefs.automation,
-      logs,
+      automation: prefs?.automation_config || {
+        masterEnabled: true,
+        aiAutoReminders: true,
+        autoCalendarSync: true,
+        autoPriority: true,
+        duplicateMerge: true,
+      },
+      logs: mappedLogs,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Error";
@@ -48,22 +67,40 @@ export async function PATCH(req: Request) {
     if (!parsed.success) {
       return NextResponse.json({ error: "Invalid input" }, { status: 400 });
     }
-    await connectDB();
-    let prefs = await StudentPreferences.findOne({ userId: user.id });
-    if (!prefs) {
-      prefs = await StudentPreferences.create({ userId: user.id, ...getDefaultStudentPreferences() });
-    }
-    Object.assign(prefs.automation, parsed.data);
-    await prefs.save();
 
-    await AiAutomationLog.create({
-      userId: user.id,
+    // Fetch current settings from Supabase
+    const { data: prefs } = await supabase
+      .from("student_preferences")
+      .select("automation_config")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    const current = prefs?.automation_config || {
+      masterEnabled: true,
+      aiAutoReminders: true,
+      autoCalendarSync: true,
+      autoPriority: true,
+      duplicateMerge: true,
+    };
+    
+    const updated = { ...current, ...parsed.data };
+
+    // Update preferences in Supabase
+    await supabase
+      .from("student_preferences")
+      .update({ automation_config: updated, updated_at: new Date().toISOString() })
+      .eq("user_id", user.id);
+
+    // Create automation decision log in Supabase
+    await supabase.from("ai_automation_logs").insert([{
+      user_id: user.id,
       type: "automation_toggle",
       summary: "Automation preferences updated",
       metadata: parsed.data,
-    });
+      created_at: new Date().toISOString()
+    }]);
 
-    return NextResponse.json({ automation: prefs.automation });
+    return NextResponse.json({ automation: updated });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Error";
     return NextResponse.json({ error: msg }, { status: msg === "Unauthorized" ? 401 : 500 });

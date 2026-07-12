@@ -1,17 +1,14 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { connectDB } from "@/lib/mongodb";
 import { requireAuth } from "@/lib/api-auth";
-import {
-  TelegramAuthPending,
-  TELEGRAM_RESEND_COOLDOWN_MS,
-  TELEGRAM_MAX_SENDS_PER_HOUR,
-} from "@/models/TelegramAuthPending";
+import { supabase } from "@/lib/supabase";
 import { sendTelegramCode } from "@/lib/telegram-gramjs";
 import { buildPhoneNumber } from "@/lib/telegram-phone";
-import mongoose from "mongoose";
 
 export const runtime = "nodejs";
+
+const TELEGRAM_RESEND_COOLDOWN_MS = 60 * 1000; // 1 minute
+const TELEGRAM_MAX_SENDS_PER_HOUR = 5;
 
 const schema = z.object({
   phone: z.string().min(6).max(20).optional(),
@@ -42,15 +39,16 @@ export async function POST(req: Request) {
     }
 
     const phoneNumber = resolvePhone(parsed.data);
-    const userId = new mongoose.Types.ObjectId(user.id);
 
-    await connectDB();
-    const existing = await TelegramAuthPending.findOne({ userId }).select(
-      "+authSessionString lastSentAt sendCount phoneNumber"
-    );
+    // Query pending auth from Supabase
+    const { data: existing } = await supabase
+      .from("telegram_auth_pendings")
+      .select("id, last_sent_at, send_count, phone")
+      .eq("user_id", user.id)
+      .maybeSingle();
 
     if (existing && !parsed.data.resend) {
-      const elapsed = Date.now() - new Date(existing.lastSentAt).getTime();
+      const elapsed = Date.now() - new Date(existing.last_sent_at).getTime();
       if (elapsed < TELEGRAM_RESEND_COOLDOWN_MS) {
         const waitSec = Math.ceil((TELEGRAM_RESEND_COOLDOWN_MS - elapsed) / 1000);
         return NextResponse.json(
@@ -63,9 +61,9 @@ export async function POST(req: Request) {
       }
     }
 
-    if (existing?.sendCount && existing.sendCount >= TELEGRAM_MAX_SENDS_PER_HOUR) {
+    if (existing?.send_count && existing.send_count >= TELEGRAM_MAX_SENDS_PER_HOUR) {
       const hourAgo = Date.now() - 60 * 60 * 1000;
-      if (new Date(existing.lastSentAt).getTime() > hourAgo) {
+      if (new Date(existing.last_sent_at).getTime() > hourAgo) {
         return NextResponse.json(
           { error: "Too many codes sent. Try again in an hour." },
           { status: 429 }
@@ -74,25 +72,28 @@ export async function POST(req: Request) {
     }
 
     const sent = await sendTelegramCode(phoneNumber);
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+    const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
     const sendCount =
-      existing && new Date(existing.lastSentAt).getTime() > Date.now() - 60 * 60 * 1000
-        ? (existing.sendCount || 0) + 1
+      existing && new Date(existing.last_sent_at).getTime() > Date.now() - 60 * 60 * 1000
+        ? (existing.send_count || 0) + 1
         : 1;
 
-    await TelegramAuthPending.findOneAndUpdate(
-      { userId },
-      {
-        phoneNumber: sent.phoneNumber,
-        phoneCodeHash: sent.phoneCodeHash,
-        authSessionString: sent.authSessionString,
-        isCodeViaApp: sent.isCodeViaApp,
-        lastSentAt: new Date(),
-        sendCount,
-        expiresAt,
-      },
-      { upsert: true, new: true }
-    );
+    // Upsert pending auth record in Supabase
+    const payload = {
+      user_id: user.id,
+      phone: sent.phoneNumber,
+      phone_code_hash: sent.phoneCodeHash,
+      auth_session_string: sent.authSessionString,
+      expires_at: expiresAt,
+      last_sent_at: new Date().toISOString(),
+      send_count: sendCount,
+      step: "code",
+      updated_at: new Date().toISOString()
+    };
+
+    await supabase
+      .from("telegram_auth_pendings")
+      .upsert([payload], { onConflict: "user_id" });
 
     return NextResponse.json({
       ok: true,

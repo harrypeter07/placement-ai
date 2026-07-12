@@ -21,7 +21,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Loader2, Save, RotateCcw } from "lucide-react";
+import { Loader2, Save, RotateCcw, Zap, Activity } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 
 type Prefs = {
   timezone: string;
@@ -99,9 +100,33 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const [offsetInput, setOffsetInput] = useState("");
+  const [activeTab, setActiveTab] = useState("connect");
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [logs, setLogs] = useState<any[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+
+  const loadLogs = useCallback(() => {
+    setLogsLoading(true);
+    fetch("/api/automation", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((d) => {
+        if (Array.isArray(d.logs)) setLogs(d.logs);
+      })
+      .catch(() => undefined)
+      .finally(() => setLogsLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const tab = params.get("tab");
+      if (tab) setActiveTab(tab);
+    }
+  }, []);
 
   const load = useCallback(() => {
     setLoading(true);
+    loadLogs();
     fetch("/api/settings", { cache: "no-store" })
       .then((r) => r.json())
       .then((d) => {
@@ -147,7 +172,7 @@ export default function SettingsPage() {
         setOffsetInput(defaultOffsetsStr(d.reminders?.defaultOffsetsMinutes || []));
       })
       .finally(() => setLoading(false));
-  }, []);
+  }, [loadLogs]);
 
   useEffect(() => {
     load();
@@ -173,6 +198,7 @@ export default function SettingsPage() {
       placement: prefs.placement,
       telegram: prefs.telegram,
       formProfile: prefs.formProfile,
+      automation: prefs.automation,
       geminiApiKey: prefs.geminiApiKey,
       twilioAccountSid: prefs.twilioAccountSid,
       twilioAuthToken: prefs.twilioAuthToken,
@@ -293,7 +319,7 @@ export default function SettingsPage() {
           </div>
         </div>
 
-        <Tabs defaultValue="connect" className="space-y-6">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
           <TabsList className="flex flex-wrap h-auto gap-1 bg-muted/50 p-1 rounded-xl">
             <TabsTrigger value="connect" className="data-[state=active]:bg-primary/20">
               Connect Telegram
@@ -302,6 +328,7 @@ export default function SettingsPage() {
             <TabsTrigger value="reminders">Reminders</TabsTrigger>
             <TabsTrigger value="calendar">Calendar</TabsTrigger>
             <TabsTrigger value="ai">AI</TabsTrigger>
+            <TabsTrigger value="automation">Automation</TabsTrigger>
             <TabsTrigger value="placement">Placement</TabsTrigger>
             <TabsTrigger value="telegram">Telegram AI</TabsTrigger>
             <TabsTrigger value="formProfile">Form Automator</TabsTrigger>
@@ -582,6 +609,91 @@ export default function SettingsPage() {
                     </SelectContent>
                   </Select>
                 </fieldset>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="automation" className="space-y-4">
+            <Card className="glass">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Zap className="h-5 w-5 text-primary animate-pulse" />
+                  AI Automation Engine
+                </CardTitle>
+                <CardDescription>
+                  Control how PlaceMint uses AI, deadlines, and Google Calendar.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                <PrefSwitchRow
+                  label="Master AI automation switch (must be ON to run AI jobs)"
+                  checked={prefs.automation?.masterEnabled ?? true}
+                  onChange={(v) => nest("automation", { masterEnabled: v })}
+                />
+                <PrefSwitchRow
+                  label="Generate smart suggested reminders using AI confidence levels"
+                  checked={prefs.automation?.aiAutoReminders ?? true}
+                  onChange={(v) => nest("automation", { aiAutoReminders: v })}
+                />
+                <PrefSwitchRow
+                  label="Sync deadlines automatically to Google Calendar events"
+                  checked={prefs.automation?.autoCalendarSync ?? true}
+                  onChange={(v) => nest("automation", { autoCalendarSync: v })}
+                />
+                <PrefSwitchRow
+                  label="Calculate reminder priority tiers dynamically"
+                  checked={prefs.automation?.autoPriority ?? true}
+                  onChange={(v) => nest("automation", { autoPriority: v })}
+                />
+                <PrefSwitchRow
+                  label="Fuzzy merge similar or duplicate deadlines automatically"
+                  checked={prefs.automation?.duplicateMerge ?? true}
+                  onChange={(v) => nest("automation", { duplicateMerge: v })}
+                />
+              </CardContent>
+            </Card>
+
+            <Card className="glass">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Activity className="h-5 w-5 text-primary" />
+                  Recent Decisions Log
+                </CardTitle>
+                <CardDescription>
+                  Historical logs showing decisions made by the automation engine.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {logsLoading ? (
+                  <div className="space-y-2">
+                    <Skeleton className="h-10 w-full" />
+                    <Skeleton className="h-10 w-full" />
+                    <Skeleton className="h-10 w-full" />
+                  </div>
+                ) : logs.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No recent decisions made yet.</p>
+                ) : (
+                  <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
+                    {logs.map((log) => (
+                      <div
+                        key={log._id}
+                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-lg border bg-white/5 p-3 text-sm"
+                      >
+                        <div className="space-y-1">
+                          <p className="font-medium text-foreground">{log.summary}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(log.createdAt).toLocaleString()}
+                          </p>
+                        </div>
+                        <div className="self-start sm:self-center">
+                          <span className="inline-block rounded bg-primary/10 px-2 py-0.5 text-xs text-primary uppercase font-semibold">
+                            {log.type}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

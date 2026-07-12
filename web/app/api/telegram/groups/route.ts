@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { connectDB } from "@/lib/mongodb";
-import { TelegramGroup } from "@/models/TelegramGroup";
+import { supabase } from "@/lib/supabase";
 import { requireAuth } from "@/lib/api-auth";
-import { StudentPreferences, getDefaultStudentPreferences } from "@/models/StudentPreferences";
 import { upsertTelegramGroup } from "@/lib/telegram-messages";
 import { checkWorkerSecret } from "@/lib/telegram-worker-auth";
 
@@ -25,19 +23,31 @@ const syncSchema = z.object({
 export async function GET() {
   try {
     const user = await requireAuth();
-    await connectDB();
-    let prefs = await StudentPreferences.findOne({ userId: user.id });
-    if (!prefs) {
-      prefs = await StudentPreferences.create({ userId: user.id, ...getDefaultStudentPreferences() });
-    }
-    const monitored = new Set(prefs.telegram?.monitoredGroupIds || []);
-    const groups = await TelegramGroup.find()
-      .sort({ lastMessageAt: -1, updatedAt: -1, title: 1 })
-      .lean();
+    
+    // Fetch user preferences from Supabase
+    const { data: prefs } = await supabase
+      .from("student_preferences")
+      .select("telegram_config")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    const monitored = new Set(prefs?.telegram_config?.monitoredGroupIds || []);
+
+    // Fetch groups from Supabase
+    const { data: groups } = await supabase
+      .from("telegram_groups")
+      .select("*")
+      .order("updated_at", { ascending: false });
+
     return NextResponse.json(
-      groups.map((g) => ({
-        ...g,
-        monitoringEnabled: monitored.has(g.groupId),
+      (groups || []).map((g) => ({
+        _id: g.id,
+        groupId: g.group_id,
+        title: g.title,
+        username: g.username || undefined,
+        kind: g.kind || "group",
+        lastMessageAt: g.updated_at,
+        monitoringEnabled: monitored.has(g.group_id),
       }))
     );
   } catch (e) {
@@ -58,7 +68,6 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    await connectDB();
     for (const g of parsed.data.groups) {
       await upsertTelegramGroup(g.groupId, g.title, {
         kind: g.kind,

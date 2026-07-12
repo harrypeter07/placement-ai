@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { connectDB } from "@/lib/mongodb";
 import { requireAuth } from "@/lib/api-auth";
-import { TelegramWorkerSession } from "@/models/TelegramWorkerSession";
+import { supabase } from "@/lib/supabase";
 import { createTelegramClient } from "@/lib/telegram-gramjs";
 import {
   convertGramJsStringToTelethonString,
@@ -12,33 +11,37 @@ import {
 
 export const runtime = "nodejs";
 
-/** Re-export Telethon session from existing GramJS login (fixes Render worker without new OTP) */
+/** Re-export Telethon session from existing GramJS login (fixes Railway worker without new OTP) */
 export async function POST() {
   try {
     await requireAuth();
-    await connectDB();
-    const doc = await TelegramWorkerSession.findOne({ key: "default" }).select(
-      "+sessionString +telethonSessionString"
-    );
-    if (!doc?.sessionString) {
+    
+    // Check connected session from Supabase
+    const { data: doc } = await supabase
+      .from("telegram_worker_sessions")
+      .select("session_string, telethon_session_string")
+      .eq("key", "default")
+      .maybeSingle();
+
+    if (!doc?.session_string) {
       return NextResponse.json({ error: "Connect Telegram in Settings first" }, { status: 400 });
     }
 
-    const existing = doc.telethonSessionString?.trim();
+    const existing = doc.telethon_session_string?.trim();
     if (
       existing &&
       isValidTelethonSessionString(existing) &&
-      telethonSessionForWorker(existing, doc.sessionString)
+      telethonSessionForWorker(existing, doc.session_string)
     ) {
       return NextResponse.json({
         ok: true,
         alreadySynced: true,
-        message: "Render worker session already synced",
+        message: "Railway worker session already synced",
         telethonLength: existing.length,
       });
     }
 
-    const client = await createTelegramClient(doc.sessionString);
+    const client = await createTelegramClient(doc.session_string);
     try {
       if (!(await client.checkAuthorization())) {
         return NextResponse.json(
@@ -49,30 +52,30 @@ export async function POST() {
 
       const telethonSessionString =
         exportTelethonSessionString(client) ||
-        convertGramJsStringToTelethonString(doc.sessionString);
+        convertGramJsStringToTelethonString(doc.session_string);
       if (
         !telethonSessionString ||
         !isValidTelethonSessionString(telethonSessionString) ||
-        !telethonSessionForWorker(telethonSessionString, doc.sessionString)
+        !telethonSessionForWorker(telethonSessionString, doc.session_string)
       ) {
         return NextResponse.json(
           {
             error:
-              "Could not build Render session from this login. Disconnect Telegram, connect again, then tap Sync immediately.",
+              "Could not build Railway session from this login. Disconnect Telegram, connect again, then tap Sync immediately.",
             hint: "If this repeats, redeploy Vercel with latest code and try again.",
           },
           { status: 500 }
         );
       }
 
-      await TelegramWorkerSession.updateOne(
-        { key: "default" },
-        { $set: { telethonSessionString } }
-      );
+      await supabase
+        .from("telegram_worker_sessions")
+        .update({ telethon_session_string: telethonSessionString, updated_at: new Date().toISOString() })
+        .eq("key", "default");
 
       return NextResponse.json({
         ok: true,
-        message: "Render worker session synced — worker should connect within 30 seconds",
+        message: "Railway worker session synced — worker should connect within 30 seconds",
         telethonLength: telethonSessionString.length,
       });
     } finally {

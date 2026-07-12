@@ -1,11 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { connectDB } from "@/lib/mongodb";
 import { requireAuth } from "@/lib/api-auth";
-import { TelegramAuthPending } from "@/models/TelegramAuthPending";
-import { TelegramWorkerSession } from "@/models/TelegramWorkerSession";
+import { supabase } from "@/lib/supabase";
 import { completeTelegramLogin, sanitizeOtpCode } from "@/lib/telegram-gramjs";
-import mongoose from "mongoose";
 
 export const runtime = "nodejs";
 
@@ -28,10 +25,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Enter the full login code" }, { status: 400 });
     }
 
-    await connectDB();
-    const pending = await TelegramAuthPending.findOne({
-      userId: new mongoose.Types.ObjectId(user.id),
-    }).select("+authSessionString");
+    // Query pending auth from Supabase
+    const { data: pending } = await supabase
+      .from("telegram_auth_pendings")
+      .select("id, user_id, phone, phone_code_hash, auth_session_string, expires_at")
+      .eq("user_id", user.id)
+      .maybeSingle();
 
     if (!pending) {
       return NextResponse.json(
@@ -39,8 +38,9 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
-    if (pending.expiresAt < new Date()) {
-      await TelegramAuthPending.deleteOne({ _id: pending._id });
+
+    if (new Date(pending.expires_at) < new Date()) {
+      await supabase.from("telegram_auth_pendings").delete().eq("id", pending.id);
       return NextResponse.json(
         {
           error: "Login session expired — tap Resend code",
@@ -50,7 +50,8 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
-    if (!pending.authSessionString) {
+
+    if (!pending.auth_session_string) {
       return NextResponse.json(
         { error: "Login session invalid — resend code", errorCode: "SESSION_MISSING", expired: true },
         { status: 400 }
@@ -59,29 +60,32 @@ export async function POST(req: Request) {
 
     try {
       const login = await completeTelegramLogin(
-        pending.phoneNumber,
-        pending.phoneCodeHash,
-        pending.authSessionString,
+        pending.phone,
+        pending.phone_code_hash,
+        pending.auth_session_string,
         otp,
         parsed.data.password
       );
 
-      await TelegramWorkerSession.findOneAndUpdate(
-        { key: "default" },
-        {
-          sessionString: login.sessionString,
-          telethonSessionString: login.telethonSessionString || undefined,
-          phoneNumber: login.phoneNumber,
-          telegramUserId: login.telegramUserId,
-          telegramUsername: login.telegramUsername,
-          displayName: login.displayName,
-          linkedByUserId: new mongoose.Types.ObjectId(user.id),
-          connectedAt: new Date(),
-        },
-        { upsert: true, new: true }
-      );
+      // Upsert worker session in Supabase
+      const sessionPayload = {
+        key: "default",
+        session_string: login.sessionString,
+        telethon_session_string: login.telethonSessionString || null,
+        phone_number: login.phoneNumber,
+        telegram_username: login.telegramUsername || null,
+        display_name: login.displayName || null,
+        connected_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
 
-      await TelegramAuthPending.deleteOne({ userId: pending.userId });
+      // Perform upsert based on key uniqueness
+      await supabase
+        .from("telegram_worker_sessions")
+        .upsert([sessionPayload], { onConflict: "key" });
+
+      // Delete pending auth
+      await supabase.from("telegram_auth_pendings").delete().eq("user_id", pending.user_id);
 
       return NextResponse.json({
         ok: true,
@@ -97,7 +101,7 @@ export async function POST(req: Request) {
       };
 
       if (err.expired || err.errorCode === "PHONE_CODE_EXPIRED") {
-        await TelegramAuthPending.deleteOne({ userId: pending.userId });
+        await supabase.from("telegram_auth_pendings").delete().eq("user_id", pending.user_id);
       }
 
       return NextResponse.json(

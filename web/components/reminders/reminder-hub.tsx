@@ -279,7 +279,7 @@ export function ReminderHub() {
             </p>
             <div className="flex flex-wrap gap-2 pt-2">
               <Button size="sm" variant="outline" asChild>
-                <Link href="/dashboard/automation">AI automation</Link>
+                <Link href="/dashboard/settings?tab=automation">AI automation</Link>
               </Button>
               <Button size="sm" variant="outline" asChild>
                 <Link href="/dashboard/resume">Resume prep</Link>

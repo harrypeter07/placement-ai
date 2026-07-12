@@ -132,9 +132,6 @@ export async function GET() {
     const obj = mapDbToFrontend(doc);
 
     // Seed credentials from environment variables if not already saved in the database
-    if (!obj.geminiApiKey && process.env.GEMINI_API_KEY) {
-      obj.geminiApiKey = process.env.GEMINI_API_KEY;
-    }
     if (!obj.twilioAccountSid && process.env.TWILIO_ACCOUNT_SID) {
       obj.twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
     }

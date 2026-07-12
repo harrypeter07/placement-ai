@@ -1,7 +1,7 @@
 import { getStudentPreferences } from "@/lib/db-supabase";
 import { supabase } from "@/lib/supabase";
 
-/** Trimmed Gemini API key, fetching first from DB settings, falling back to Vercel env. */
+/** Trimmed Gemini API key, fetching exclusively from DB settings. */
 export async function getGeminiApiKey(userId?: string): Promise<string | null> {
   try {
     if (userId) {
@@ -28,11 +28,7 @@ export async function getGeminiApiKey(userId?: string): Promise<string | null> {
     console.error("[gemini-env] Failed to query Supabase for API key:", err);
   }
 
-  const raw = process.env.GEMINI_API_KEY;
-  if (!raw) return null;
-  const key = raw.trim();
-  if (key.length < 10 || key === "your_key" || key === "xxx") return null;
-  return key;
+  return null;
 }
 
 export async function isGeminiConfigured(userId?: string): Promise<boolean> {
@@ -41,4 +37,4 @@ export async function isGeminiConfigured(userId?: string): Promise<boolean> {
 }
 
 export const GEMINI_MISSING_HINT =
-  "Configure Gemini API Key in dashboard Settings or set GEMINI_API_KEY env variable.";
+  "Configure Gemini API Key in dashboard Settings.";

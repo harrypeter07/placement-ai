@@ -1,9 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { connectDB } from "@/lib/mongodb";
 import { requireAuth } from "@/lib/api-auth";
-import { TelegramWorkerSession } from "@/models/TelegramWorkerSession";
-import { TelegramGroup } from "@/models/TelegramGroup";
+import { supabase } from "@/lib/supabase";
 import { fetchGroupMessagesFromTelegram } from "@/lib/telegram-fetch-history";
 import { bulkStoreTelegramMessages } from "@/lib/telegram-messages";
 
@@ -25,19 +23,28 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     }
 
-    await connectDB();
-    const sessionDoc = await TelegramWorkerSession.findOne({ key: "default" })
-      .select("+sessionString")
-      .lean();
-    if (!sessionDoc?.sessionString) {
+    // Fetch Telegram Worker Session
+    const { data: sessionDoc } = await supabase
+      .from("telegram_worker_sessions")
+      .select("session_string")
+      .eq("key", "default")
+      .maybeSingle();
+
+    if (!sessionDoc?.session_string) {
       return NextResponse.json({ error: "Connect Telegram in Settings first" }, { status: 400 });
     }
 
-    const group = await TelegramGroup.findOne({ groupId: parsed.data.groupId }).lean();
+    // Fetch Group details from Supabase
+    const { data: group } = await supabase
+      .from("telegram_groups")
+      .select("title")
+      .eq("group_id", parsed.data.groupId)
+      .maybeSingle();
+
     const title = group?.title || parsed.data.groupId;
 
     const rows = await fetchGroupMessagesFromTelegram(
-      sessionDoc.sessionString,
+      sessionDoc.session_string,
       parsed.data.groupId,
       parsed.data.limit ?? 50
     );

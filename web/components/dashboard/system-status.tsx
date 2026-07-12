@@ -113,7 +113,7 @@ export function SystemStatusBar() {
         <div className="flex items-center gap-2">
           <Database className="h-4 w-4 text-primary" />
           <StatusDot ok={dbOk} />
-          <span>MongoDB</span>
+          <span>Supabase DB</span>
           <Badge variant={dbOk ? "success" : "critical"}>
             {statusLoading ? "Checking…" : health?.database ?? "offline"}
           </Badge>
@@ -140,7 +140,7 @@ export function SystemStatusBar() {
           <p className="font-semibold text-amber-200">Why Telegram Worker shows &quot;waiting&quot;</p>
           <p className="text-foreground font-medium">
             {telegram?.workerNeedsTelethonSync
-              ? "Your account is connected on the website, but Render still needs a Telethon session."
+              ? "Your account is connected on the website, but Railway still needs a Telethon session."
               : telegram?.workerLastError || "Worker is waiting for Telegram session."}
           </p>
           <ol className="list-decimal list-inside space-y-1 text-foreground">
@@ -148,7 +148,7 @@ export function SystemStatusBar() {
               Go to <strong>Settings</strong> (this page)
             </li>
             <li>
-              Click the green button: <strong>Sync Render worker session</strong>
+              Click the green button: <strong>Sync Railway worker session</strong>
             </li>
             <li>Wait 30–60 seconds, then click <strong>Refresh</strong> above</li>
           </ol>
@@ -166,7 +166,7 @@ export function SystemStatusBar() {
       )}
       {!workerOk && !workerWaiting && (
         <div className="mt-3 text-xs text-amber-400/90">
-          <p>Worker offline — check Render is deployed and secrets match Vercel.</p>
+          <p>Worker offline — check Railway is deployed and secrets match Vercel.</p>
         </div>
       )}
       {workerOk && (

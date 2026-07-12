@@ -1,10 +1,7 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { connectDB } from "@/lib/mongodb";
-import { TelegramMessage } from "@/models/TelegramMessage";
-import { TelegramGroup } from "@/models/TelegramGroup";
-import { PlacementInsight } from "@/models/PlacementInsight";
-import { StudentPreferences } from "@/models/StudentPreferences";
+import { supabase } from "@/lib/supabase";
 import { requireAuth } from "@/lib/api-auth";
 import { analyzeChatMessagesForInsights } from "@/lib/ai/chat-insights";
 import {
@@ -31,15 +28,66 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const groupId = searchParams.get("groupId");
     const overview = searchParams.get("overview") === "pinned";
-    await connectDB();
-    const filter: Record<string, unknown> = { userId: user.id };
-    if (groupId) filter.groupId = groupId;
-    if (overview) {
-      filter.pinnedToOverview = true;
-      filter.status = "applied";
+
+    // 1. Fetch user preferences to find monitored groups
+    const { data: prefs } = await supabase
+      .from("student_preferences")
+      .select("telegram_config")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    const monitored = prefs?.telegram_config?.monitoredGroupIds || [];
+    if (monitored.length === 0) {
+      return NextResponse.json([]);
     }
-    const rows = await PlacementInsight.find(filter).sort({ rank: 1, createdAt: -1 }).limit(50).lean();
-    return NextResponse.json(rows);
+
+    // 2. Query insights from monitored groups only
+    let query = supabase
+      .from("placement_insights")
+      .select("*")
+      .eq("user_id", user.id)
+      .in("group_id", monitored);
+
+    if (groupId) {
+      query = query.eq("group_id", groupId);
+    }
+    if (overview) {
+      query = query.eq("pinned_to_overview", true).eq("status", "applied");
+    }
+
+    const { data: rows, error } = await query
+      .order("rank", { ascending: true })
+      .order("created_at", { ascending: false })
+      .limit(50);
+
+    if (error) {
+      console.error("[GET insights] Supabase error:", error);
+      return NextResponse.json({ error: "Database error" }, { status: 500 });
+    }
+
+    // Map snake_case database fields to camelCase expected by the client
+    const mapped = (rows || []).map((r) => ({
+      _id: r.id,
+      groupId: r.group_id,
+      groupTitle: r.group_title,
+      rank: r.rank,
+      title: r.title,
+      summary: r.summary,
+      whyRanked: r.why_ranked,
+      urgency: r.urgency,
+      category: r.category,
+      confidence: r.confidence,
+      status: r.status,
+      pinnedToOverview: r.pinned_to_overview,
+      extractedDeadline: r.extracted_deadline,
+      suggestedReminderOffsetsMinutes: r.suggested_reminder_offsets_minutes,
+      sourceMessageIds: r.source_message_ids,
+      sourceMessagePreview: r.source_message_preview,
+      reminderCount: r.reminder_count,
+      createdAt: r.created_at,
+    }));
+
+    return NextResponse.json(mapped);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Error";
     return NextResponse.json({ error: msg }, { status: msg === "Unauthorized" ? 401 : 500 });
@@ -64,18 +112,21 @@ export async function POST(req: Request) {
       (parsed.success && parsed.data.applyMode) ||
       (undefined as "preview" | "all" | "none" | undefined);
 
-    await connectDB();
+    // Fetch user preferences
+    const { data: prefs } = await supabase
+      .from("student_preferences")
+      .select("*")
+      .eq("user_id", user.id)
+      .maybeSingle();
 
-    let prefs = await StudentPreferences.findOne({ userId: user.id });
     if (!prefs) {
-      const { getDefaultStudentPreferences } = await import("@/models/StudentPreferences");
-      prefs = await StudentPreferences.create({ userId: user.id, ...getDefaultStudentPreferences() });
+      return NextResponse.json({ error: "Settings not found" }, { status: 400 });
     }
 
-    const defaultApply = prefs.telegram?.insightsApplyMode || "preview";
+    const defaultApply = prefs.telegram_config?.insightsApplyMode || "preview";
     const mode = applyMode || defaultApply;
 
-    let monitored = prefs.telegram?.monitoredGroupIds || [];
+    let monitored = prefs.telegram_config?.monitoredGroupIds || [];
     if (targetGroupId) monitored = [targetGroupId];
     if (monitored.length === 0) {
       return NextResponse.json({
@@ -90,15 +141,19 @@ export async function POST(req: Request) {
 
     const limit = Math.min(
       100,
-      Math.max(5, messageLimit ?? prefs.telegram?.insightMessageCount ?? 25)
+      Math.max(5, messageLimit ?? prefs.telegram_config?.insightMessageCount ?? 25)
     );
     const since = sinceDate
       ? new Date(sinceDate)
-      : prefs.telegram?.insightSinceDate
-        ? new Date(prefs.telegram.insightSinceDate)
+      : prefs.telegram_config?.insightSinceDate
+        ? new Date(prefs.telegram_config.insightSinceDate)
         : null;
 
-    const groups = await TelegramGroup.find({ groupId: { $in: monitored } }).lean();
+    // Query telegram groups from Supabase
+    const { data: groups } = await supabase
+      .from("telegram_groups")
+      .select("*")
+      .in("group_id", monitored);
 
     const fetchResult = await ensureMessagesForGroups(monitored, limit, since);
     const fetchNote =
@@ -114,13 +169,20 @@ export async function POST(req: Request) {
       messages: { messageId: string; text: string; senderName?: string; sentAt: string }[];
     }[] = [];
 
-    for (const g of groups) {
-      const msgFilter: Record<string, unknown> = { groupId: g.groupId };
-      if (since && !Number.isNaN(since.getTime())) {
-        msgFilter.sentAt = { $gte: since };
+    for (const g of (groups || [])) {
+      let msgQuery = supabase
+        .from("telegram_messages")
+        .select("message_id, text, sender_name, sent_at")
+        .eq("group_id", g.group_id);
+      if (since) {
+        msgQuery = msgQuery.gte("sent_at", since.toISOString());
       }
-      const msgs = await TelegramMessage.find(msgFilter).sort({ sentAt: -1 }).limit(limit).lean();
-      if (msgs.length === 0 && targetGroupId) {
+
+      const { data: msgs } = await msgQuery
+        .order("sent_at", { ascending: false })
+        .limit(limit);
+
+      if ((!msgs || msgs.length === 0) && targetGroupId) {
         return NextResponse.json({
           insights: [],
           proposed: [],
@@ -129,16 +191,17 @@ export async function POST(req: Request) {
           analyzedMessageCount: 0,
         });
       }
+
       payload.push({
-        groupId: g.groupId,
+        groupId: g.group_id,
         title: g.title,
-        messages: msgs
+        messages: (msgs || [])
           .reverse()
           .map((m) => ({
-            messageId: m.messageId,
+            messageId: m.message_id,
             text: m.text,
-            senderName: m.senderName,
-            sentAt: m.sentAt instanceof Date ? m.sentAt.toISOString() : String(m.sentAt),
+            senderName: m.sender_name || undefined,
+            sentAt: m.sent_at,
           })),
       });
     }
@@ -155,27 +218,60 @@ export async function POST(req: Request) {
       });
     }
 
-    const analysis = await analyzeChatMessagesForInsights(withMessages, prefs);
+    // Adapt prefs schema to camelCase expected by AI analysis
+    const mappedPrefs = {
+      ai: prefs.ai_config,
+      telegram: prefs.telegram_config,
+    };
+
+    const analysis = await analyzeChatMessagesForInsights(withMessages, mappedPrefs as any);
     const processingNotes = `${fetchNote}${analysis.processingNotes || ""}`.trim();
 
     if (mode === "preview" || mode === "none") {
       await storeDraftInsights(user.id, analysis.insights, targetGroupId);
-      const filter: { userId: string; groupId?: string } = { userId: user.id };
-      if (targetGroupId) filter.groupId = targetGroupId;
-      const stored = await PlacementInsight.find({
-        ...filter,
-        status: "draft",
-      })
-        .sort({ rank: 1 })
-        .limit(50)
-        .lean();
+      
+      let storedQuery = supabase
+        .from("placement_insights")
+        .select("*")
+        .eq("user_id", user.id)
+        .eq("status", "draft");
+
+      if (targetGroupId) {
+        storedQuery = storedQuery.eq("group_id", targetGroupId);
+      }
+
+      const { data: stored } = await storedQuery
+        .order("rank", { ascending: true })
+        .limit(50);
+
+      // Map back to camelCase
+      const mappedStored = (stored || []).map((r) => ({
+        _id: r.id,
+        groupId: r.group_id,
+        groupTitle: r.group_title,
+        rank: r.rank,
+        title: r.title,
+        summary: r.summary,
+        whyRanked: r.why_ranked,
+        urgency: r.urgency,
+        category: r.category,
+        confidence: r.confidence,
+        status: r.status,
+        pinnedToOverview: r.pinned_to_overview,
+        extractedDeadline: r.extracted_deadline,
+        suggestedReminderOffsetsMinutes: r.suggested_reminder_offsets_minutes,
+        sourceMessageIds: r.source_message_ids,
+        sourceMessagePreview: r.source_message_preview,
+        reminderCount: r.reminder_count,
+        createdAt: r.created_at,
+      }));
 
       return NextResponse.json({
         ...analysis,
         processingNotes,
-        insights: stored,
+        insights: mappedStored,
         proposed: analysis.insights,
-        created: { deadlines: 0, reminders: 0, insights: stored.length },
+        created: { deadlines: 0, reminders: 0, insights: mappedStored.length },
         analyzedMessageCount,
         analyzedGroupId: targetGroupId,
         applyMode: mode,
@@ -185,23 +281,61 @@ export async function POST(req: Request) {
       });
     }
 
+    // Map db preferences config
+    const automationMappedPrefs = {
+      automation: prefs.automation_config,
+      telegram: prefs.telegram_config,
+      reminders: prefs.reminders_config,
+      calendar: prefs.calendar_config,
+    };
+
     const created = await applyChatInsightsForUser(
       user.id,
       analysis.insights,
-      prefs,
+      automationMappedPrefs as any,
       targetGroupId,
       { pinToOverview: parsed.success ? parsed.data.pinToOverview : false }
     );
 
-    const filter: { userId: string; groupId?: string } = { userId: user.id };
-    if (targetGroupId) filter.groupId = targetGroupId;
-    const stored = await PlacementInsight.find(filter).sort({ rank: 1 }).limit(50).lean();
+    let storedQuery = supabase
+      .from("placement_insights")
+      .select("*")
+      .eq("user_id", user.id);
+
+    if (targetGroupId) {
+      storedQuery = storedQuery.eq("group_id", targetGroupId);
+    }
+
+    const { data: stored } = await storedQuery
+      .order("rank", { ascending: true })
+      .limit(50);
+
+    const mappedStored = (stored || []).map((r) => ({
+      _id: r.id,
+      groupId: r.group_id,
+      groupTitle: r.group_title,
+      rank: r.rank,
+      title: r.title,
+      summary: r.summary,
+      whyRanked: r.why_ranked,
+      urgency: r.urgency,
+      category: r.category,
+      confidence: r.confidence,
+      status: r.status,
+      pinnedToOverview: r.pinned_to_overview,
+      extractedDeadline: r.extracted_deadline,
+      suggestedReminderOffsetsMinutes: r.suggested_reminder_offsets_minutes,
+      sourceMessageIds: r.source_message_ids,
+      sourceMessagePreview: r.source_message_preview,
+      reminderCount: r.reminder_count,
+      createdAt: r.created_at,
+    }));
 
     return NextResponse.json({
       ...analysis,
       processingNotes,
       created,
-      insights: stored,
+      insights: mappedStored,
       proposed: analysis.insights,
       analyzedMessageCount,
       analyzedGroupId: targetGroupId,

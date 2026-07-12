@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { connectDB } from "@/lib/mongodb";
 import { checkWorkerSecret } from "@/lib/telegram-worker-auth";
-import { TelegramWorkerSession } from "@/models/TelegramWorkerSession";
+import { supabase } from "@/lib/supabase";
 import { sessionsLookIdentical, telethonSessionForWorker } from "@/lib/telegram-telethon-session";
 
 export const runtime = "nodejs";
@@ -15,23 +14,30 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    await connectDB();
-    const doc = await TelegramWorkerSession.findOne({ key: "default" })
-      .select("+sessionString +telethonSessionString phoneNumber telegramUsername displayName connectedAt")
-      .lean();
+    const { data: doc, error } = await supabase
+      .from("telegram_worker_sessions")
+      .select("session_string, telethon_session_string, phone_number, telegram_username, display_name, connected_at")
+      .eq("key", "default")
+      .maybeSingle();
 
-    const gramjs = doc?.sessionString?.trim() || "";
-    let telethon = doc?.telethonSessionString?.trim() || "";
+    if (error) {
+      console.error("[telegram/session] Supabase error:", error);
+    }
+
+    const gramjs = doc?.session_string?.trim() || "";
+    let telethon = doc?.telethon_session_string?.trim() || "";
     let repaired = false;
 
     const workerSession = telethonSessionForWorker(telethon, gramjs);
     if (workerSession && workerSession !== telethon) {
       telethon = workerSession;
       repaired = true;
-      await TelegramWorkerSession.updateOne(
-        { key: "default" },
-        { $set: { telethonSessionString: workerSession } }
-      );
+      
+      await supabase
+        .from("telegram_worker_sessions")
+        .update({ telethon_session_string: workerSession, updated_at: new Date().toISOString() })
+        .eq("key", "default");
+
       console.info("[telegram/session] auto-repaired telethonSessionString for worker");
     }
 
@@ -60,16 +66,16 @@ export async function GET(req: Request) {
       telethonSessionString: workerSession || undefined,
       gramjsSessionString: gramjs,
       sessionFormat: telethonValid ? "telethon" : "gramjs",
-      phoneNumber: doc.phoneNumber,
-      telegramUsername: doc.telegramUsername,
-      displayName: doc.displayName,
-      connectedAt: doc.connectedAt,
+      phoneNumber: doc.phone_number,
+      telegramUsername: doc.telegram_username,
+      displayName: doc.display_name,
+      connectedAt: doc.connected_at,
       diagnostics: meta,
       workerHint: telethonValid
         ? repaired
-          ? "Session auto-converted for Render worker"
-          : "Session OK for Render worker"
-        : "Run Settings → Sync Render worker session",
+          ? "Session auto-converted for Railway worker"
+          : "Session OK for Railway worker"
+        : "Run Settings → Sync Railway worker session",
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Error";

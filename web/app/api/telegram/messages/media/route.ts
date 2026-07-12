@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
-import { connectDB } from "@/lib/mongodb";
 import { requireAuth } from "@/lib/api-auth";
-import { TelegramWorkerSession } from "@/models/TelegramWorkerSession";
-import { TelegramMessage } from "@/models/TelegramMessage";
+import { supabase } from "@/lib/supabase";
 import { downloadMessagePhoto } from "@/lib/telegram-fetch-history";
 
 export const runtime = "nodejs";
@@ -19,20 +17,30 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "groupId and messageId required" }, { status: 400 });
     }
 
-    await connectDB();
-    const msg = await TelegramMessage.findOne({ groupId, messageId }).lean();
-    if (!msg?.hasMedia || msg.mediaType !== "photo") {
-      return NextResponse.json({ error: "Not a photo message" }, { status: 404 });
+    // Verify message exists in Supabase
+    const { data: msg } = await supabase
+      .from("telegram_messages")
+      .select("id")
+      .eq("group_id", groupId)
+      .eq("message_id", messageId)
+      .maybeSingle();
+
+    if (!msg) {
+      return NextResponse.json({ error: "Message not found" }, { status: 404 });
     }
 
-    const sessionDoc = await TelegramWorkerSession.findOne({ key: "default" })
-      .select("+sessionString")
-      .lean();
-    if (!sessionDoc?.sessionString) {
+    // Fetch Telegram session
+    const { data: sessionDoc } = await supabase
+      .from("telegram_worker_sessions")
+      .select("session_string")
+      .eq("key", "default")
+      .maybeSingle();
+
+    if (!sessionDoc?.session_string) {
       return NextResponse.json({ error: "Telegram not connected" }, { status: 400 });
     }
 
-    const buf = await downloadMessagePhoto(sessionDoc.sessionString, groupId, messageId);
+    const buf = await downloadMessagePhoto(sessionDoc.session_string, groupId, messageId);
     if (!buf) {
       return NextResponse.json({ error: "Could not load image" }, { status: 404 });
     }

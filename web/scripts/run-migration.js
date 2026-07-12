@@ -1,8 +1,13 @@
 const { Client } = require('pg');
 const fs = require('fs');
 const path = require('path');
+const dns = require('dns');
 
-const connectionString = 'postgresql://postgres:NbBFU2T3%2F%2F%5EsdQc@db.oybdgtsrlkqiishkpncf.supabase.co:5432/postgres';
+if (dns.setDefaultResultOrder) {
+  dns.setDefaultResultOrder('verbatim');
+}
+
+const connectionString = 'postgresql://postgres.oybdgtsrlkqiishkpncf:NbBFU2T3%2F%2F%5EsdQc@aws-1-ap-northeast-2.pooler.supabase.com:5432/postgres';
 
 async function main() {
   const sqlPath = path.join(__dirname, '../../supabase_schema.sql');

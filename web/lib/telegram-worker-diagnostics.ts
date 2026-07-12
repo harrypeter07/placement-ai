@@ -1,6 +1,4 @@
-import { connectDB } from "@/lib/mongodb";
-import { TelegramWorkerSession } from "@/models/TelegramWorkerSession";
-import { WorkerHeartbeat } from "@/models/WorkerHeartbeat";
+import { supabase } from "@/lib/supabase";
 
 function maskSecret(set: boolean) {
   return set ? "set (length ok)" : "MISSING";
@@ -25,7 +23,7 @@ export async function buildTelegramWorkerDiagnostics() {
   lines.push(`TELEGRAM_WORKER_SECRET: ${maskSecret(!!process.env.TELEGRAM_WORKER_SECRET)}`);
   lines.push(`TELEGRAM_API_ID: ${process.env.TELEGRAM_API_ID ? "set" : "MISSING"}`);
   lines.push(`TELEGRAM_API_HASH: ${process.env.TELEGRAM_API_HASH ? "set" : "MISSING"}`);
-  lines.push(`MONGODB_URI: ${process.env.MONGODB_URI ? "set" : "MISSING"}`);
+  lines.push(`Supabase URL: ${process.env.NEXT_PUBLIC_SUPABASE_URL ? "set" : "MISSING"}`);
   lines.push(`TELEGRAM_WORKER_PUBLIC_URL (cron ping): ${workerUrl || "not set (optional)"}`);
 
   let sessionInDb = false;
@@ -35,76 +33,81 @@ export async function buildTelegramWorkerDiagnostics() {
   let dbOk = false;
 
   try {
-    await connectDB();
     dbOk = true;
-    const doc = await TelegramWorkerSession.findOne({ key: "default" })
-      .select("+sessionString +telethonSessionString phoneNumber connectedAt")
-      .lean();
-    if (doc?.sessionString) {
+    const { data: doc } = await supabase
+      .from("telegram_worker_sessions")
+      .select("session_string, telethon_session_string, phone_number, connected_at")
+      .eq("key", "default")
+      .maybeSingle();
+
+    if (doc?.session_string) {
       sessionInDb = true;
-      hasGramjs = doc.sessionString.length > 20;
-      hasTelethon = isValidTelethonPrefix(doc.telethonSessionString);
-      phoneHint = doc.phoneNumber || "";
+      hasGramjs = doc.session_string.length > 20;
+      hasTelethon = isValidTelethonPrefix(doc.telethon_session_string);
+      phoneHint = doc.phone_number || "";
       lines.push("");
-      lines.push("=== MongoDB session (TelegramWorkerSession) ===");
+      lines.push("=== Supabase session (telegram_worker_sessions) ===");
       lines.push(`Record found: yes`);
       lines.push(`Phone: ${phoneHint || "unknown"}`);
-      lines.push(`Connected at: ${doc.connectedAt ? new Date(doc.connectedAt).toISOString() : "?"}`);
-      lines.push(`GramJS session (web): ${hasGramjs ? `yes (${doc.sessionString.length} chars)` : "no"}`);
+      lines.push(`Connected at: ${doc.connected_at ? new Date(doc.connected_at).toISOString() : "?"}`);
+      lines.push(`GramJS session (web): ${hasGramjs ? `yes (${doc.session_string.length} chars)` : "no"}`);
       lines.push(
-        `Telethon session (Render worker): ${hasTelethon ? `yes (${(doc.telethonSessionString || "").length} chars)` : "NO — click Sync Render worker session in Settings"}`
+        `Telethon session (Railway worker): ${hasTelethon ? `yes (${(doc.telethon_session_string || "").length} chars)` : "NO — click Sync Railway worker session in Settings"}`
       );
     } else {
       lines.push("");
-      lines.push("=== MongoDB session ===");
-      lines.push("No TelegramWorkerSession — Connect Telegram in Settings (phone + OTP)");
+      lines.push("=== Supabase session ===");
+      lines.push("No telegram_worker_sessions — Connect Telegram in Settings (phone + OTP)");
     }
 
-    const hb = await WorkerHeartbeat.findOne({ service: "telegram-worker" })
-      .sort({ updatedAt: -1 })
-      .lean();
+    const { data: hb } = await supabase
+      .from("worker_heartbeats")
+      .select("*")
+      .eq("service", "telegram-worker")
+      .maybeSingle();
+
     if (hb) {
       lines.push("");
       lines.push("=== Last worker heartbeat ===");
       lines.push(`Status: ${hb.status}`);
-      lines.push(`Updated: ${hb.updatedAt ? new Date(hb.updatedAt).toISOString() : "?"}`);
-      lines.push(`Groups monitored: ${hb.groupsMonitored}`);
-      if (hb.lastError) lines.push(`Summary: ${hb.lastError}`);
-      if (hb.detailLog) {
+      lines.push(`Updated: ${hb.updated_at ? new Date(hb.updated_at).toISOString() : "?"}`);
+      lines.push(`Groups monitored: ${hb.groups_monitored}`);
+      if (hb.last_error) lines.push(`Summary: ${hb.last_error}`);
+      if (hb.detail_log) {
         lines.push("");
         lines.push("--- Worker detail log ---");
-        lines.push(hb.detailLog);
+        lines.push(hb.detail_log);
       }
     }
   } catch (e) {
     lines.push("");
     lines.push(`=== Database error ===`);
-    lines.push(e instanceof Error ? e.message : "Could not query MongoDB");
+    lines.push(e instanceof Error ? e.message : "Could not query Supabase");
   }
 
   lines.push("");
-  lines.push("=== What Render worker needs ===");
-  lines.push(`WEB_APP_URL on Render must be: ${webUrl || "(your Vercel URL)"}`);
-  lines.push("TELEGRAM_WORKER_SECRET on Render = same value as Vercel");
-  lines.push("MONGODB_URI on Render = same as Vercel");
+  lines.push("=== What Railway worker needs ===");
+  lines.push(`NEXT_PUBLIC_APP_URL on Railway must be: ${webUrl || "(your Vercel URL)"}`);
+  lines.push("TELEGRAM_WORKER_SECRET on Railway = same value as Vercel");
+  lines.push("NEXT_PUBLIC_SUPABASE_URL on Railway = same as Vercel");
   if (sessionInDb && !hasTelethon) {
     lines.push("");
-    lines.push("FIX: Settings → Sync Render worker session (or reconnect Telegram)");
+    lines.push("FIX: Settings → Sync Railway worker session (or reconnect Telegram)");
   }
   if (!sessionInDb) {
     lines.push("");
-    lines.push("FIX: Settings → Connect Telegram → then Sync Render worker session");
+    lines.push("FIX: Settings → Connect Telegram → then Sync Railway worker session");
   }
 
-  let suggestedFix = "Connect Telegram in Settings, then Sync Render worker session.";
+  let suggestedFix = "Connect Telegram in Settings, then Sync Railway worker session.";
   if (!process.env.TELEGRAM_WORKER_SECRET) {
-    suggestedFix = "Set TELEGRAM_WORKER_SECRET on Vercel and Render (must match).";
+    suggestedFix = "Set TELEGRAM_WORKER_SECRET on Vercel and Railway (must match).";
   } else if (!dbOk) {
-    suggestedFix = "Fix MONGODB_URI on Vercel — database unreachable.";
+    suggestedFix = "Fix Supabase connection variables — database unreachable.";
   } else if (!sessionInDb) {
     suggestedFix = "Connect Telegram in Settings (phone + OTP).";
   } else if (!hasTelethon) {
-    suggestedFix = "Click Sync Render worker session in Settings.";
+    suggestedFix = "Click Sync Railway worker session in Settings.";
   } else if (!hasGramjs) {
     suggestedFix = "Reconnect Telegram in Settings.";
   }

@@ -23,7 +23,6 @@ export const siteConfig = {
       { title: "Calendar", href: "/dashboard/calendar", icon: "Calendar" },
       { title: "Notifications", href: "/dashboard/notifications", icon: "Bell" },
       { title: "AI Insights", href: "/dashboard/insights", icon: "Sparkles" },
-      { title: "Automation", href: "/dashboard/automation", icon: "Zap" },
       { title: "Eligibility", href: "/dashboard/eligibility", icon: "CheckCircle" },
       { title: "Resume Analyzer", href: "/dashboard/resume", icon: "FileText" },
       { title: "Analytics", href: "/dashboard/analytics", icon: "BarChart3" },

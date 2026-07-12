@@ -1,6 +1,4 @@
-import { TelegramGroup } from "@/models/TelegramGroup";
-import { TelegramMessage } from "@/models/TelegramMessage";
-import { TelegramWorkerSession } from "@/models/TelegramWorkerSession";
+import { supabase } from "@/lib/supabase";
 import { fetchGroupMessagesFromTelegram } from "@/lib/telegram-fetch-history";
 import { bulkStoreTelegramMessages } from "@/lib/telegram-messages";
 
@@ -18,10 +16,13 @@ export async function ensureMessagesForGroups(
 
   if (groupIds.length === 0) return { fetched, perGroup, errors };
 
-  const sessionDoc = await TelegramWorkerSession.findOne({ key: "default" })
-    .select("+sessionString")
-    .lean();
-  if (!sessionDoc?.sessionString) {
+  const { data: sessionDoc } = await supabase
+    .from("telegram_worker_sessions")
+    .select("session_string")
+    .eq("key", "default")
+    .maybeSingle();
+
+  if (!sessionDoc?.session_string) {
     errors.push("Telegram not connected — connect in Settings first");
     return { fetched, perGroup, errors };
   }
@@ -30,20 +31,31 @@ export async function ensureMessagesForGroups(
 
   for (const groupId of groupIds) {
     try {
-      const msgFilter: Record<string, unknown> = { groupId };
+      let query = supabase
+        .from("telegram_messages")
+        .select("id", { count: "exact", head: true })
+        .eq("group_id", groupId);
+
       if (since && !Number.isNaN(since.getTime())) {
-        msgFilter.sentAt = { $gte: since };
+        query = query.gte("sent_at", since.toISOString());
       }
-      const inDb = await TelegramMessage.countDocuments(msgFilter);
+
+      const { count } = await query;
+      const inDb = count || 0;
       if (inDb >= cap) {
         perGroup[groupId] = 0;
         continue;
       }
 
-      const group = await TelegramGroup.findOne({ groupId }).lean();
+      const { data: group } = await supabase
+        .from("telegram_groups")
+        .select("title")
+        .eq("group_id", groupId)
+        .maybeSingle();
+
       const title = group?.title || groupId;
       const rows = await fetchGroupMessagesFromTelegram(
-        sessionDoc.sessionString,
+        sessionDoc.session_string,
         groupId,
         cap
       );

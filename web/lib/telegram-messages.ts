@@ -1,25 +1,28 @@
-import { TelegramGroup } from "@/models/TelegramGroup";
-import { TelegramMessage } from "@/models/TelegramMessage";
+import { supabase } from "@/lib/supabase";
 
 export async function upsertTelegramGroup(
   groupId: string,
   title: string,
   extra?: { kind?: string; username?: string }
 ) {
-  const now = new Date();
-  return TelegramGroup.findOneAndUpdate(
-    { groupId },
-    {
-      $setOnInsert: { groupId },
-      $set: {
-        title,
-        lastDiscoveredAt: now,
-        ...(extra?.kind ? { kind: extra.kind } : {}),
-        ...(extra?.username ? { username: extra.username } : {}),
-      },
-    },
-    { upsert: true, new: true }
-  );
+  const payload = {
+    group_id: groupId,
+    title: title,
+    username: extra?.username || null,
+    active: true,
+    updated_at: new Date().toISOString()
+  };
+
+  const { data, error } = await supabase
+    .from("telegram_groups")
+    .upsert([payload], { onConflict: "group_id" })
+    .select("*")
+    .single();
+
+  if (error) {
+    console.error("[telegram-messages] upsertTelegramGroup error:", error);
+  }
+  return data;
 }
 
 export async function storeTelegramMessage(input: {
@@ -32,64 +35,29 @@ export async function storeTelegramMessage(input: {
   mediaType?: string;
   hasMedia?: boolean;
 }) {
-  const preview = input.text.slice(0, 120).replace(/\s+/g, " ").trim();
-
   await upsertTelegramGroup(input.groupId, input.groupTitle);
 
-  const existing = await TelegramMessage.findOne({
-    groupId: input.groupId,
-    messageId: input.messageId,
-  });
-
-  if (existing) {
-    await TelegramMessage.updateOne(
-      { _id: existing._id },
-      {
-        $set: {
-          text: input.text,
-          senderName: input.senderName,
-          sentAt: input.sentAt,
-          mediaType: input.mediaType || "none",
-          hasMedia: !!input.hasMedia,
-        },
-      }
-    );
-    await TelegramGroup.updateOne(
-      { groupId: input.groupId },
-      {
-        $set: {
-          title: input.groupTitle,
-          lastMessageAt: input.sentAt,
-          lastMessagePreview: preview,
-        },
-      }
-    );
-    return { created: false, updated: true, message: existing };
-  }
-
-  const message = await TelegramMessage.create({
-    groupId: input.groupId,
-    messageId: input.messageId,
+  const payload = {
+    group_id: input.groupId,
+    group_title: input.groupTitle,
+    message_id: input.messageId,
     text: input.text,
-    senderName: input.senderName,
-    sentAt: input.sentAt,
-    mediaType: input.mediaType || "none",
-    hasMedia: !!input.hasMedia,
-  });
+    sender_name: input.senderName || null,
+    sent_at: new Date(input.sentAt).toISOString(),
+    updated_at: new Date().toISOString()
+  };
 
-  await TelegramGroup.updateOne(
-    { groupId: input.groupId },
-    {
-      $set: {
-        title: input.groupTitle,
-        lastMessageAt: input.sentAt,
-        lastMessagePreview: preview,
-      },
-      $inc: { messageCount: 1 },
-    }
-  );
+  const { data: inserted, error } = await supabase
+    .from("telegram_messages")
+    .upsert([payload], { onConflict: "group_id, message_id" })
+    .select("*")
+    .single();
 
-  return { created: true, message };
+  if (error) {
+    console.error("[telegram-messages] storeTelegramMessage error:", error);
+    return { created: false, updated: false };
+  }
+  return { created: true, updated: false, message: inserted };
 }
 
 export async function bulkStoreTelegramMessages(
@@ -105,7 +73,7 @@ export async function bulkStoreTelegramMessages(
   }[]
 ) {
   let created = 0;
-  let updated = 0;
+  const updated = 0;
   for (const row of rows) {
     const r = await storeTelegramMessage({
       groupId,
@@ -113,7 +81,6 @@ export async function bulkStoreTelegramMessages(
       ...row,
     });
     if (r.created) created++;
-    else if (r.updated) updated++;
   }
   return { created, updated, total: rows.length };
 }

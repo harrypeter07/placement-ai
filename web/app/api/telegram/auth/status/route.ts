@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
-import { connectDB } from "@/lib/mongodb";
 import { requireAuth } from "@/lib/api-auth";
-import { TelegramWorkerSession } from "@/models/TelegramWorkerSession";
+import { supabase } from "@/lib/supabase";
 
 export const runtime = "nodejs";
 
@@ -13,12 +12,15 @@ function maskPhone(phone: string) {
 export async function GET() {
   try {
     await requireAuth();
-    await connectDB();
-    const doc = await TelegramWorkerSession.findOne({ key: "default" })
-      .select("+sessionString phoneNumber telegramUsername displayName connectedAt linkedByUserId")
-      .lean();
+    
+    // Check connected session from Supabase
+    const { data: doc } = await supabase
+      .from("telegram_worker_sessions")
+      .select("session_string, phone_number, telegram_username, display_name, connected_at")
+      .eq("key", "default")
+      .maybeSingle();
 
-    if (!doc?.sessionString) {
+    if (!doc?.session_string) {
       return NextResponse.json({
         connected: false,
         apiConfigured: !!(process.env.TELEGRAM_API_ID && process.env.TELEGRAM_API_HASH),
@@ -28,10 +30,10 @@ export async function GET() {
     return NextResponse.json({
       connected: true,
       apiConfigured: true,
-      phoneNumber: maskPhone(doc.phoneNumber),
-      telegramUsername: doc.telegramUsername,
-      displayName: doc.displayName,
-      connectedAt: doc.connectedAt,
+      phoneNumber: maskPhone(doc.phone_number || ""),
+      telegramUsername: doc.telegram_username,
+      displayName: doc.display_name,
+      connectedAt: doc.connected_at,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Error";

@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { connectDB } from "@/lib/mongodb";
-import { WorkerHeartbeat } from "@/models/WorkerHeartbeat";
+import { supabase } from "@/lib/supabase";
 import { setMemoryHeartbeat } from "@/lib/worker-heartbeat-store";
 
 export const runtime = "nodejs";
@@ -46,30 +45,32 @@ export async function POST(req: Request) {
     }
 
     try {
-      await connectDB();
-      const heartbeat = await WorkerHeartbeat.findOneAndUpdate(
-        { service: "telegram-worker" },
-        {
-          service: "telegram-worker",
-          status: parsed.data.status,
-          groupsMonitored: parsed.data.groupsMonitored,
-          lastMessageAt: memoryPayload.lastMessageAt,
-          lastError: parsed.data.lastError,
-          detailLog: parsed.data.detailLog,
-        },
-        { upsert: true, new: true }
-      );
+      const payload = {
+        service: "telegram-worker",
+        status: parsed.data.status,
+        groups_monitored: parsed.data.groupsMonitored,
+        last_error: parsed.data.lastError || null,
+        detail_log: parsed.data.detailLog || null,
+        updated_at: new Date().toISOString()
+      };
+
+      const { data, error } = await supabase
+        .from("worker_heartbeats")
+        .upsert([payload], { onConflict: "service" });
+
+      if (error) throw error;
+
       setMemoryHeartbeat(memoryPayload);
-      return NextResponse.json({ ok: true, heartbeat, storage: "database" });
+      return NextResponse.json({ ok: true, heartbeat: data, storage: "database" });
     } catch (dbErr) {
       const message = dbErr instanceof Error ? dbErr.message : "Database unavailable";
-      console.error("[heartbeat] DB failed, using memory store:", message);
+      console.error("[heartbeat] Supabase failed, using memory store:", message);
       const heartbeat = setMemoryHeartbeat(memoryPayload);
       return NextResponse.json({
         ok: true,
         heartbeat,
         storage: "memory",
-        warning: "Saved in memory only — MongoDB unreachable. Dashboard worker status will still update.",
+        warning: "Saved in memory only — Supabase unreachable. Dashboard worker status will still update.",
       });
     }
   } catch (err) {

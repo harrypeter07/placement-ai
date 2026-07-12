@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { connectDB } from "@/lib/mongodb";
-import mongoose from "mongoose";
+import { supabase } from "@/lib/supabase";
 import { isGeminiConfigured } from "@/lib/ai/gemini-env";
 
 export const runtime = "nodejs";
@@ -12,21 +11,21 @@ export async function GET() {
     database: "offline" as "online" | "offline" | "misconfigured",
     timestamp: new Date().toISOString(),
     env: {
-      mongodb: !!process.env.MONGODB_URI,
+      supabase: !!process.env.NEXT_PUBLIC_SUPABASE_URL && !!process.env.SUPABASE_SERVICE_ROLE_KEY,
       nextauth: !!process.env.NEXTAUTH_SECRET,
       gemini: isGeminiConfigured(),
       telegramWorkerSecret: !!process.env.TELEGRAM_WORKER_SECRET,
     },
   };
 
-  if (!process.env.MONGODB_URI) {
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     checks.database = "misconfigured";
     return NextResponse.json(checks);
   }
 
   try {
-    await connectDB();
-    checks.database = mongoose.connection.readyState === 1 ? "online" : "offline";
+    const { error } = await supabase.from("users").select("id").limit(1);
+    checks.database = !error ? "online" : "offline";
   } catch {
     checks.database = "offline";
   }

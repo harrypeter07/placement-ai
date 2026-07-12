@@ -1,19 +1,19 @@
-import { connectDB } from "@/lib/mongodb";
+import { supabase } from "@/lib/supabase";
 import { discoverTelegramGroups } from "@/lib/telegram-gramjs";
 import { upsertTelegramGroup } from "@/lib/telegram-messages";
-import { TelegramWorkerSession } from "@/models/TelegramWorkerSession";
 
 export async function syncGroupCatalogFromSession() {
-  await connectDB();
-  const sessionDoc = await TelegramWorkerSession.findOne({ key: "default" })
-    .select("+sessionString")
-    .lean();
+  const { data: sessionDoc } = await supabase
+    .from("telegram_worker_sessions")
+    .select("session_string")
+    .eq("key", "default")
+    .maybeSingle();
 
-  if (!sessionDoc?.sessionString) {
+  if (!sessionDoc?.session_string) {
     throw new Error("Connect Telegram in Settings first");
   }
 
-  const discovered = await discoverTelegramGroups(sessionDoc.sessionString);
+  const discovered = await discoverTelegramGroups(sessionDoc.session_string);
   for (const g of discovered) {
     await upsertTelegramGroup(g.groupId, g.title, { kind: g.kind, username: g.username });
   }
