@@ -40,7 +40,7 @@ export async function extractPlacementFromText(text: string): Promise<ExtractedP
     confidence: 0,
   };
 
-  const apiKey = getGeminiApiKey();
+  const apiKey = await getGeminiApiKey();
   if (!apiKey) {
     return preprocessWithRegex(text);
   }
@@ -110,7 +110,7 @@ export async function analyzeResume(text: string): Promise<{
     ],
   };
 
-  const apiKey = getGeminiApiKey();
+  const apiKey = await getGeminiApiKey();
   if (!apiKey) return defaultResult;
 
   try {

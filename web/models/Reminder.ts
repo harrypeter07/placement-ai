@@ -15,7 +15,7 @@ export interface IReminder {
   offset?: ReminderOffsetPreset;
   /** Minutes before deadline at which this reminder fires */
   minutesBeforeDeadline: number;
-  channels: ("browser" | "email" | "telegram" | "dashboard")[];
+  channels: ("browser" | "email" | "telegram" | "dashboard" | "phoneCall")[];
   sent: boolean;
   title?: string;
   message?: string;
@@ -45,7 +45,7 @@ const ReminderSchema = new Schema<IReminder>(
       enum: ["1d", "6h", "1h", "15m", "custom"],
     },
     minutesBeforeDeadline: { type: Number },
-    channels: [{ type: String, enum: ["browser", "email", "telegram", "dashboard"] }],
+    channels: [{ type: String, enum: ["browser", "email", "telegram", "dashboard", "phoneCall"] }],
     sent: { type: Boolean, default: false },
     title: { type: String },
     message: { type: String },

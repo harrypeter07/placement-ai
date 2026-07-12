@@ -39,6 +39,7 @@ type Prefs = {
     telegram: boolean;
     inApp: boolean;
     push?: boolean;
+    phoneCall?: boolean;
     quietHoursEnabled?: boolean;
     quietHoursStart?: string;
     quietHoursEnd?: string;
@@ -61,6 +62,31 @@ type Prefs = {
     autoInsights: boolean;
     autoCreateDeadlines: boolean;
     autoCreateReminders: boolean;
+  };
+  formProfile?: {
+    fullName: string;
+    email: string;
+    phone: string;
+    cgpa: string;
+    branch: string;
+    graduationYear: string;
+    resumeLink: string;
+    githubLink?: string;
+    linkedInLink?: string;
+    rollNumber?: string;
+    additionalInfo?: string;
+  };
+  geminiApiKey?: string;
+  twilioAccountSid?: string;
+  twilioAuthToken?: string;
+  twilioFromPhone?: string;
+  twilioToPhone?: string;
+  twilioVoiceSettings?: {
+    menuEnabled: boolean;
+    fillViaCallEnabled: boolean;
+    defaultSnoozeMinutes: number;
+    voice: string;
+    language: string;
   };
 };
 
@@ -87,7 +113,37 @@ export default function SettingsPage() {
           autoCreateDeadlines: true,
           autoCreateReminders: true,
         };
-        setPrefs({ ...d, telegram: tg });
+        const fp = d.formProfile || {
+          fullName: "",
+          email: "",
+          phone: "",
+          cgpa: "",
+          branch: "",
+          graduationYear: "",
+          resumeLink: "",
+          githubLink: "",
+          linkedInLink: "",
+          rollNumber: "",
+          additionalInfo: "",
+        };
+        const tvs = d.twilioVoiceSettings || {
+          menuEnabled: true,
+          fillViaCallEnabled: true,
+          defaultSnoozeMinutes: 60,
+          voice: "Polly.Kajal-Neural",
+          language: "en-IN",
+        };
+        setPrefs({
+          ...d,
+          telegram: tg,
+          formProfile: fp,
+          geminiApiKey: d.geminiApiKey || "",
+          twilioAccountSid: d.twilioAccountSid || "",
+          twilioAuthToken: d.twilioAuthToken || "",
+          twilioFromPhone: d.twilioFromPhone || "",
+          twilioToPhone: d.twilioToPhone || "",
+          twilioVoiceSettings: tvs,
+        });
         setOffsetInput(defaultOffsetsStr(d.reminders?.defaultOffsetsMinutes || []));
       })
       .finally(() => setLoading(false));
@@ -116,6 +172,13 @@ export default function SettingsPage() {
       ai: prefs.ai,
       placement: prefs.placement,
       telegram: prefs.telegram,
+      formProfile: prefs.formProfile,
+      geminiApiKey: prefs.geminiApiKey,
+      twilioAccountSid: prefs.twilioAccountSid,
+      twilioAuthToken: prefs.twilioAuthToken,
+      twilioFromPhone: prefs.twilioFromPhone,
+      twilioToPhone: prefs.twilioToPhone,
+      twilioVoiceSettings: prefs.twilioVoiceSettings,
     };
     const res = await fetch("/api/settings", {
       method: "PATCH",
@@ -144,6 +207,37 @@ export default function SettingsPage() {
       toast.success("Reset to defaults");
       setDirty(false);
       load();
+    }
+  }
+
+  const [testingCall, setTestingCall] = useState(false);
+
+  async function triggerTestCall() {
+    if (!prefs) return;
+    const toPhone = prefs.twilioToPhone || prefs.formProfile?.phone || "";
+    if (!toPhone) {
+      toast.error("Please configure your destination phone number (Twilio To Phone) first!");
+      return;
+    }
+
+    setTestingCall(true);
+    const toastId = toast.loading("Triggering test call via Twilio...");
+    try {
+      const res = await fetch("/api/reminders/test-call", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ toPhone }),
+      });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        toast.success(`Success! Test call placed. Call SID: ${data.callSid}`, { id: toastId });
+      } else {
+        toast.error(data.error || "Failed to trigger test call.", { id: toastId });
+      }
+    } catch (err) {
+      toast.error("Network error while triggering test call.", { id: toastId });
+    } finally {
+      setTestingCall(false);
     }
   }
 
@@ -210,6 +304,8 @@ export default function SettingsPage() {
             <TabsTrigger value="ai">AI</TabsTrigger>
             <TabsTrigger value="placement">Placement</TabsTrigger>
             <TabsTrigger value="telegram">Telegram AI</TabsTrigger>
+            <TabsTrigger value="formProfile">Form Automator</TabsTrigger>
+            <TabsTrigger value="apiCredentials">API Keys & Twilio</TabsTrigger>
           </TabsList>
 
           <TabsContent value="connect" className="space-y-4">
@@ -356,11 +452,13 @@ export default function SettingsPage() {
                 <CardTitle>Channels</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                {(["browser", "email", "telegram", "inApp"] as const).map((ch) => (
+                {(["browser", "email", "telegram", "inApp", "phoneCall"] as const).map((ch) => (
                   <div key={ch} className="flex items-center justify-between">
-                    <Label className="capitalize">{ch === "inApp" ? "In-app" : ch}</Label>
+                    <Label className="capitalize">
+                      {ch === "inApp" ? "In-app" : ch === "phoneCall" ? "Phone Call (Twilio Voice)" : ch}
+                    </Label>
                     <Switch
-                      checked={prefs.notifications[ch]}
+                      checked={prefs.notifications[ch] ?? false}
                       onCheckedChange={(v) => nest("notifications", { [ch]: v })}
                     />
                   </div>
@@ -628,6 +726,281 @@ export default function SettingsPage() {
                 <PrefSwitchRow label="Auto-run insights on monitored groups" checked={prefs.telegram?.autoInsights ?? true} onChange={(v) => nest("telegram", { ...(prefs.telegram || { insightMessageCount: 25, monitoredGroupIds: [] }), autoInsights: v })} />
                 <PrefSwitchRow label="Auto-create deadlines from insights" checked={prefs.telegram?.autoCreateDeadlines ?? true} onChange={(v) => nest("telegram", { ...(prefs.telegram || { insightMessageCount: 25, monitoredGroupIds: [] }), autoCreateDeadlines: v })} />
                 <PrefSwitchRow label="Auto-create reminders from insights" checked={prefs.telegram?.autoCreateReminders ?? true} onChange={(v) => nest("telegram", { ...(prefs.telegram || { insightMessageCount: 25, monitoredGroupIds: [] }), autoCreateReminders: v })} />
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="formProfile" className="space-y-4">
+            <Card className="glass">
+              <CardHeader>
+                <CardTitle>Form Automator Profile</CardTitle>
+                <CardDescription>
+                  Configure your default profile details. These will be fuzzy-matched against form labels to auto-fill Google Forms.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <fieldset className="space-y-2 border-0 p-0">
+                    <Label>Full Name</Label>
+                    <Input
+                      value={prefs.formProfile?.fullName || ""}
+                      onChange={(e) => nest("formProfile", { fullName: e.target.value })}
+                      placeholder="John Doe"
+                    />
+                  </fieldset>
+                  <fieldset className="space-y-2 border-0 p-0">
+                    <Label>Email</Label>
+                    <Input
+                      type="email"
+                      value={prefs.formProfile?.email || ""}
+                      onChange={(e) => nest("formProfile", { email: e.target.value })}
+                      placeholder="john@example.com"
+                    />
+                  </fieldset>
+                  <fieldset className="space-y-2 border-0 p-0">
+                    <Label>Phone Number</Label>
+                    <Input
+                      value={prefs.formProfile?.phone || ""}
+                      onChange={(e) => nest("formProfile", { phone: e.target.value })}
+                      placeholder="+919876543210"
+                    />
+                  </fieldset>
+                  <fieldset className="space-y-2 border-0 p-0">
+                    <Label>Current CGPA</Label>
+                    <Input
+                      value={prefs.formProfile?.cgpa || ""}
+                      onChange={(e) => nest("formProfile", { cgpa: e.target.value })}
+                      placeholder="9.15"
+                    />
+                  </fieldset>
+                  <fieldset className="space-y-2 border-0 p-0">
+                    <Label>Branch / Stream</Label>
+                    <Input
+                      value={prefs.formProfile?.branch || ""}
+                      onChange={(e) => nest("formProfile", { branch: e.target.value })}
+                      placeholder="Computer Science & Engineering"
+                    />
+                  </fieldset>
+                  <fieldset className="space-y-2 border-0 p-0">
+                    <Label>Graduation Year</Label>
+                    <Input
+                      value={prefs.formProfile?.graduationYear || ""}
+                      onChange={(e) => nest("formProfile", { graduationYear: e.target.value })}
+                      placeholder="2027"
+                    />
+                  </fieldset>
+                  <fieldset className="space-y-2 border-0 p-0 sm:col-span-2">
+                    <Label>Resume Link (Google Drive / public shareable link)</Label>
+                    <Input
+                      value={prefs.formProfile?.resumeLink || ""}
+                      onChange={(e) => nest("formProfile", { resumeLink: e.target.value })}
+                      placeholder="https://drive.google.com/..."
+                    />
+                  </fieldset>
+                  <fieldset className="space-y-2 border-0 p-0">
+                    <Label>GitHub Link (optional)</Label>
+                    <Input
+                      value={prefs.formProfile?.githubLink || ""}
+                      onChange={(e) => nest("formProfile", { githubLink: e.target.value })}
+                      placeholder="https://github.com/..."
+                    />
+                  </fieldset>
+                  <fieldset className="space-y-2 border-0 p-0">
+                    <Label>LinkedIn Link (optional)</Label>
+                    <Input
+                      value={prefs.formProfile?.linkedInLink || ""}
+                      onChange={(e) => nest("formProfile", { linkedInLink: e.target.value })}
+                      placeholder="https://linkedin.com/in/..."
+                    />
+                  </fieldset>
+                  <fieldset className="space-y-2 border-0 p-0">
+                    <Label>College Roll Number / registration ID (optional)</Label>
+                    <Input
+                      value={prefs.formProfile?.rollNumber || ""}
+                      onChange={(e) => nest("formProfile", { rollNumber: e.target.value })}
+                      placeholder="23CSE102"
+                    />
+                  </fieldset>
+                  <fieldset className="space-y-2 border-0 p-0">
+                    <Label>Additional Info / Cover Note (optional)</Label>
+                    <Input
+                      value={prefs.formProfile?.additionalInfo || ""}
+                      onChange={(e) => nest("formProfile", { additionalInfo: e.target.value })}
+                      placeholder="Highly motivated CS student specialized in AI..."
+                    />
+                  </fieldset>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="apiCredentials" className="space-y-4">
+            <Card className="glass">
+              <CardHeader>
+                <CardTitle>AI Gemini Configuration</CardTitle>
+                <CardDescription>
+                  Configure your Gemini API key used for job parsing and smart analytics extraction.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <fieldset className="space-y-2 border-0 p-0">
+                  <Label>Gemini API Key</Label>
+                  <Input
+                    type="password"
+                    value={prefs.geminiApiKey || ""}
+                    onChange={(e) => update("geminiApiKey", e.target.value)}
+                    placeholder="AIzaSy..."
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Directly saves to DB. Seeding defaults from Vercel env variable if present.
+                  </p>
+                </fieldset>
+              </CardContent>
+            </Card>
+
+            <Card className="glass">
+              <CardHeader>
+                <CardTitle>Twilio Voice Configuration</CardTitle>
+                <CardDescription>
+                  Configure your Twilio account details to receive phone call alerts for critical deadlines.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <fieldset className="space-y-2 border-0 p-0">
+                    <Label>Twilio Account SID</Label>
+                    <Input
+                      value={prefs.twilioAccountSid || ""}
+                      onChange={(e) => update("twilioAccountSid", e.target.value)}
+                      placeholder="AC..."
+                    />
+                  </fieldset>
+                  <fieldset className="space-y-2 border-0 p-0">
+                    <Label>Twilio Auth Token</Label>
+                    <Input
+                      type="password"
+                      value={prefs.twilioAuthToken || ""}
+                      onChange={(e) => update("twilioAuthToken", e.target.value)}
+                      placeholder="dacff..."
+                    />
+                  </fieldset>
+                  <fieldset className="space-y-2 border-0 p-0">
+                    <Label>Twilio From Phone Number</Label>
+                    <Input
+                      value={prefs.twilioFromPhone || ""}
+                      onChange={(e) => update("twilioFromPhone", e.target.value)}
+                      placeholder="+13158563982"
+                    />
+                  </fieldset>
+                  <fieldset className="space-y-2 border-0 p-0">
+                    <Label>Twilio To Phone Number (Default Destination)</Label>
+                    <Input
+                      value={prefs.twilioToPhone || ""}
+                      onChange={(e) => update("twilioToPhone", e.target.value)}
+                      placeholder="+91xxxxxxxxxx"
+                    />
+                  </fieldset>
+                </div>
+
+                <div className="pt-4 border-t border-white/10 flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <p className="text-sm font-medium">Verify Connection</p>
+                    <p className="text-xs text-muted-foreground">
+                      Place a test placement call to your destination phone.
+                    </p>
+                  </div>
+                  <Button
+                    variant="glow"
+                    size="sm"
+                    disabled={testingCall || !prefs.twilioToPhone}
+                    onClick={triggerTestCall}
+                  >
+                    {testingCall && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Place Test Call
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="glass mt-4">
+              <CardHeader>
+                <CardTitle>Twilio Voice Customization</CardTitle>
+                <CardDescription>
+                  Configure call-to-actions, automated snooze durations, and speech settings for alerts.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="space-y-0.5">
+                    <Label className="text-sm font-medium">Interactive TwiML Menu</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Offer options to fill forms, snooze, or repeat alerts during the call.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={prefs.twilioVoiceSettings?.menuEnabled ?? true}
+                    onCheckedChange={(val) => nest("twilioVoiceSettings", { menuEnabled: val })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between pt-2 border-t border-white/10">
+                  <div className="space-y-0.5">
+                    <Label className="text-sm font-medium">Enable &quot;Fill via Call&quot; CTC</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Allows triggering the Form Automator directly by pressing 1 on your phone.
+                    </p>
+                  </div>
+                  <Switch
+                    checked={prefs.twilioVoiceSettings?.fillViaCallEnabled ?? true}
+                    onCheckedChange={(val) => nest("twilioVoiceSettings", { fillViaCallEnabled: val })}
+                  />
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2 pt-2 border-t border-white/10">
+                  <fieldset className="space-y-2 border-0 p-0">
+                    <Label>Default Snooze Duration</Label>
+                    <Select
+                      value={String(prefs.twilioVoiceSettings?.defaultSnoozeMinutes ?? 60)}
+                      onValueChange={(val) => nest("twilioVoiceSettings", { defaultSnoozeMinutes: Number(val) })}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select snooze duration" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="30">30 minutes</SelectItem>
+                        <SelectItem value="60">1 hour (60 min)</SelectItem>
+                        <SelectItem value="180">3 hours (180 min)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </fieldset>
+
+                  <fieldset className="space-y-2 border-0 p-0">
+                    <Label>Voice Actor (Amazon Polly)</Label>
+                    <Select
+                      value={prefs.twilioVoiceSettings?.voice ?? "Polly.Kajal-Neural"}
+                      onValueChange={(val) => nest("twilioVoiceSettings", { voice: val })}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Select voice actor" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Polly.Kajal-Neural">Kajal (Neural, India)</SelectItem>
+                        <SelectItem value="Polly.Aditi-Standard">Aditi (Standard, India)</SelectItem>
+                        <SelectItem value="Polly.Joanna-Neural">Joanna (Neural, US)</SelectItem>
+                        <SelectItem value="Polly.Ivy-Neural">Ivy (Neural child, US)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </fieldset>
+
+                  <fieldset className="space-y-2 border-0 p-0 sm:col-span-2">
+                    <Label>Voice Language</Label>
+                    <Input
+                      value={prefs.twilioVoiceSettings?.language ?? "en-IN"}
+                      onChange={(e) => nest("twilioVoiceSettings", { language: e.target.value })}
+                      placeholder="en-IN"
+                    />
+                  </fieldset>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>

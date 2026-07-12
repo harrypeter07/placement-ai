@@ -18,6 +18,7 @@ export interface IStudentPreferences {
     telegram: boolean;
     inApp: boolean;
     push: boolean;
+    phoneCall: boolean;
     quietHoursEnabled: boolean;
     quietHoursStart: string;
     quietHoursEnd: string;
@@ -60,6 +61,24 @@ export interface IStudentPreferences {
     autoCreateDeadlines: boolean;
     autoCreateReminders: boolean;
   };
+  formProfile: {
+    fullName: string;
+    email: string;
+    phone: string;
+    cgpa: string;
+    branch: string;
+    graduationYear: string;
+    resumeLink: string;
+    githubLink: string;
+    linkedInLink: string;
+    rollNumber: string;
+    additionalInfo: string;
+  };
+  geminiApiKey: string;
+  twilioAccountSid: string;
+  twilioAuthToken: string;
+  twilioFromPhone: string;
+  twilioToPhone: string;
   updatedAt: Date;
   createdAt: Date;
 }
@@ -80,6 +99,7 @@ const defaults = {
     telegram: false,
     inApp: true,
     push: true,
+    phoneCall: false,
     quietHoursEnabled: false,
     quietHoursStart: "22:00",
     quietHoursEnd: "07:00",
@@ -117,6 +137,24 @@ const defaults = {
     autoCreateDeadlines: true,
     autoCreateReminders: true,
   },
+  formProfile: {
+    fullName: "",
+    email: "",
+    phone: "",
+    cgpa: "",
+    branch: "",
+    graduationYear: "",
+    resumeLink: "",
+    githubLink: "",
+    linkedInLink: "",
+    rollNumber: "",
+    additionalInfo: "",
+  },
+  geminiApiKey: "",
+  twilioAccountSid: "",
+  twilioAuthToken: "",
+  twilioFromPhone: "",
+  twilioToPhone: "",
 };
 
 const StudentPreferencesSchema = new Schema<IStudentPreferences>(
@@ -141,6 +179,7 @@ const StudentPreferencesSchema = new Schema<IStudentPreferences>(
       telegram: { type: Boolean, default: defaults.notifications.telegram },
       inApp: { type: Boolean, default: defaults.notifications.inApp },
       push: { type: Boolean, default: defaults.notifications.push },
+      phoneCall: { type: Boolean, default: defaults.notifications.phoneCall },
       quietHoursEnabled: { type: Boolean, default: defaults.notifications.quietHoursEnabled },
       quietHoursStart: { type: String, default: defaults.notifications.quietHoursStart },
       quietHoursEnd: { type: String, default: defaults.notifications.quietHoursEnd },
@@ -182,6 +221,24 @@ const StudentPreferencesSchema = new Schema<IStudentPreferences>(
       autoCreateDeadlines: { type: Boolean, default: defaults.telegram.autoCreateDeadlines },
       autoCreateReminders: { type: Boolean, default: defaults.telegram.autoCreateReminders },
     },
+    formProfile: {
+      fullName: { type: String, default: defaults.formProfile.fullName },
+      email: { type: String, default: defaults.formProfile.email },
+      phone: { type: String, default: defaults.formProfile.phone },
+      cgpa: { type: String, default: defaults.formProfile.cgpa },
+      branch: { type: String, default: defaults.formProfile.branch },
+      graduationYear: { type: String, default: defaults.formProfile.graduationYear },
+      resumeLink: { type: String, default: defaults.formProfile.resumeLink },
+      githubLink: { type: String, default: defaults.formProfile.githubLink },
+      linkedInLink: { type: String, default: defaults.formProfile.linkedInLink },
+      rollNumber: { type: String, default: defaults.formProfile.rollNumber },
+      additionalInfo: { type: String, default: defaults.formProfile.additionalInfo },
+    },
+    geminiApiKey: { type: String, default: defaults.geminiApiKey },
+    twilioAccountSid: { type: String, default: defaults.twilioAccountSid },
+    twilioAuthToken: { type: String, default: defaults.twilioAuthToken },
+    twilioFromPhone: { type: String, default: defaults.twilioFromPhone },
+    twilioToPhone: { type: String, default: defaults.twilioToPhone },
   },
   { timestamps: true }
 );

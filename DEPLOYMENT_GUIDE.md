@@ -174,6 +174,9 @@ Also ensure on OAuth consent screen that app includes required scopes used by ap
 - `profile`
 - `https://www.googleapis.com/auth/calendar`
 
+> [!IMPORTANT]
+> **Publish OAuth Consent App**: In your Google Cloud Console, navigate to the OAuth Consent Screen and click **Publish App** (move status from "Testing" to "In production"). If left in "Testing", Google will expire your refresh tokens every 7 days, causing automatic calendar syncs to break.
+
 ---
 
 ## 6) Deploy worker on Render
@@ -272,21 +275,68 @@ You no longer need `TELEGRAM_GROUP_IDS` unless you want a legacy fallback before
 
 ---
 
-## 7) Post-deploy verification checklist
+## 7) Deploying on Railway (Recommended 24/7 Hosting)
+
+Railway is excellent for running the background services because it runs 24/7 without sleep constraints. You will deploy two services on Railway:
+
+### A) The Telegram Listener Worker
+1. Create a new service on Railway connected to this repository.
+2. Set the **Root Directory** of this service to `telegram-worker`. Railway will automatically build it using `telegram-worker/Dockerfile`!
+3. Add the following Environment Variables:
+   - `TELEGRAM_API_ID` & `TELEGRAM_API_HASH`
+   - `MONGODB_URI`
+   - `WEB_APP_URL` (your deployed Vercel URL, e.g. `https://your-app.vercel.app`)
+   - `TELEGRAM_WORKER_SECRET` (same as Vercel)
+   - `TELEGRAM_READ_ONLY=true` (highly recommended; Vercel now parses messages automatically)
+
+### B) The Playwright Fallback Service (On-Demand Only)
+1. Create another service on Railway connected to the same repository.
+2. Set the **Root Directory** of this service to `isolated-fallback-service`. Railway will build it using the Playwright/Chromium Dockerfile!
+3. Add a **Railway Volume** mounted at `/app/screenshots` so screenshots are persistent.
+4. Add the following Environment Variables:
+   - `MONGODB_URI`
+   - `PUBLIC_URL` (Generate a Railway domain/static URL for this service)
+5. On **Vercel**, add `PLAYWRIGHT_SERVICE_URL` pointing to this service's public domain.
+
+### C) Reminder Cron Job
+1. Set up a Railway cron service (or use a cron scheduling tool like UptimeRobot/Vercel Cron) to hit `POST https://your-app.vercel.app/api/reminders/process-due?apiKey=YOUR_SECRET` every 45 seconds. This processes and fires due pushes and Twilio voice calls independently of the Telegram listener state.
+
+---
+
+## 8) Twilio Calling Alert setup & constraints
+
+To receive phone call alerts for approaching deadlines, set up a **Twilio Free Trial** account:
+1. Obtain a free Twilio phone number.
+2. **Verify your destination number**: In the Twilio Console under Verified Caller IDs, add and verify your personal phone number.
+3. Configure the following environment variables on Vercel:
+   - `TWILIO_ACCOUNT_SID`
+   - `TWILIO_AUTH_TOKEN`
+   - `TWILIO_FROM_PHONE_NUMBER` (your Twilio trial number)
+   - `TWILIO_TO_PHONE_NUMBER` (your verified personal number)
+
+> [!WARNING]
+> **Twilio Trial Account Constraints**:
+> 1. Trial accounts expire after **30 days** unless upgraded with standard billing details. Keep track of day 30 or upgrade early.
+> 2. Every trial call plays a short introductory Twilio message ("You are using a trial account...") before reading out your custom placement deadline details. Upgrading your Twilio account removes this message.
+
+---
+
+## 9) Post-deploy verification checklist
 
 1. Visit `<vercel-url>/api/health` and confirm web app responds.
 2. Login with Google once.
 3. Open calendar page and confirm connected status and event loading.
 4. **Settings → Connect Telegram** (phone + OTP).
-5. Restart Render worker; verify `/api/telegram/status` shows worker online.
-6. Groups appear in Notifications — toggle monitoring ON and run AI insights.
-6. Confirm deadlines/reminders auto-created and visible in Placements.
+5. Restart Railway worker; verify `/api/telegram/status` shows worker online.
+6. Verify reconnect logs match Railway console events to confirm root cause connection stability.
+7. Groups appear in Notifications — toggle monitoring ON and run AI insights.
+8. Confirm deadlines/reminders auto-created and visible in Placements.
 
 ---
 
 ## Useful links
 
 - Vercel project settings: `https://vercel.com/<team>/<project>/settings`
-- Render dashboard: `https://dashboard.render.com/`
+- Railway dashboard: `https://railway.app/`
 - Google Cloud Credentials: `https://console.cloud.google.com/apis/credentials`
 - OAuth Consent Screen: `https://console.cloud.google.com/apis/credentials/consent`

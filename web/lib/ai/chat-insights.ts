@@ -3,10 +3,6 @@ import type { IStudentPreferences } from "@/models/StudentPreferences";
 import { getGeminiApiKey, isGeminiConfigured } from "@/lib/ai/gemini-env";
 import { smartPlacementInsights } from "@/lib/ai/smart-placement-analysis";
 
-function getGenAI() {
-  const key = getGeminiApiKey();
-  return key ? new GoogleGenerativeAI(key) : null;
-}
 
 export type ChatMessageInput = {
   messageId: string;
@@ -102,9 +98,9 @@ export async function analyzeChatMessagesForInsights(
     return { insights: [], processingNotes: "No messages in monitored groups." };
   }
 
-  const geminiConfigured = isGeminiConfigured();
-  const genAI = getGenAI();
-  if (!geminiConfigured || !genAI) {
+  const geminiKey = await getGeminiApiKey();
+  const genAI = geminiKey ? new GoogleGenerativeAI(geminiKey) : null;
+  if (!geminiKey || !genAI) {
     return runSmartRulesAnalysis(groups, flatCount);
   }
 

@@ -110,7 +110,7 @@ Message:
 ${message.slice(0, 6000)}`;
 
   try {
-    const apiKey = getGeminiApiKey();
+    const apiKey = await getGeminiApiKey();
     if (!apiKey) return { ...FALLBACK, aiSummary: message.slice(0, 200) };
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });

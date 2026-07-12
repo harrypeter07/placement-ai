@@ -164,41 +164,23 @@ async def fetch_session_string(verbose: bool = True) -> str:
                         verbose,
                     )
 
-                    if telethon and legacy and telethon == legacy:
-                        if is_valid_telethon_string_session(legacy):
-                            s = normalize_telethon_session_string(legacy)
-                            _log_diag(
-                                "Using session (GramJS/Telethon share same valid pack)",
-                                verbose,
-                            )
-                            return s
+                    # 1. Use telethonSessionString if it's already a valid Telethon format
+                    if telethon and is_valid_telethon_string_session(telethon):
+                        _log_diag("Using valid telethonSessionString from database", verbose)
+                        return normalize_telethon_session_string(telethon)
+
+                    # 2. Use legacy sessionString if it's already a valid Telethon format
+                    if legacy and is_valid_telethon_string_session(legacy):
+                        _log_diag("Using valid legacy sessionString (already Telethon format)", verbose)
+                        return normalize_telethon_session_string(legacy)
+
+                    # 3. If legacy sessionString is a GramJS string, attempt to convert it
+                    if legacy:
                         converted = gramjs_string_to_telethon(legacy)
                         if converted and is_valid_telethon_string_session(converted):
-                            _log_diag("Converted GramJS session to Telethon format", verbose)
+                            _log_diag("Converted legacy GramJS session to Telethon format", verbose)
                             return normalize_telethon_session_string(converted)
-                        _log_diag(
-                            "BLOCKER: session is GramJS-only (not Telethon pack)",
-                            verbose,
-                        )
-                        _log_diag(
-                            "Fix: Vercel Settings → Sync Render worker session",
-                            verbose,
-                        )
-                        return ""
-
-                    s = telethon if is_valid_telethon_string_session(telethon) else ""
-                    if not s and is_valid_telethon_string_session(legacy):
-                        s = legacy
-                        _log_diag("Using legacy sessionString (valid Telethon pack)", verbose)
-                    if s:
-                        _log_diag(f"SUCCESS: loaded session from Vercel API ({fmt})", verbose)
-                        return s
-
-                    if telethon or legacy:
-                        _log_diag(
-                            "BLOCKER: Session in DB is GramJS-only — Telethon worker cannot use it",
-                            verbose,
-                        )
+                        
                         _log_diag(
                             "Fix: Vercel → Settings → Sync Render worker session (or reconnect Telegram)",
                             verbose,
@@ -664,9 +646,29 @@ async def start_render_health_server() -> web.AppRunner | None:
             }
         )
 
+    async def send_message_route(request: web.Request) -> web.Response:
+        try:
+            body = await request.json()
+            api_key = body.get("apiKey")
+            if not WORKER_SECRET or api_key != WORKER_SECRET:
+                return web.json_response({"error": "Unauthorized"}, status=401)
+            
+            text = body.get("text", "")
+            if not text:
+                return web.json_response({"error": "text required"}, status=400)
+            
+            if not client or not await client.is_user_authorized():
+                return web.json_response({"error": "Telegram not authorized"}, status=503)
+                
+            await client.send_message("me", text)
+            return web.json_response({"ok": True})
+        except Exception as e:
+            return web.json_response({"error": str(e)}, status=500)
+
     app = web.Application()
     app.router.add_get("/", health)
     app.router.add_get("/health", health)
+    app.router.add_post("/send-message", send_message_route)
 
     runner = web.AppRunner(app)
     await runner.setup()

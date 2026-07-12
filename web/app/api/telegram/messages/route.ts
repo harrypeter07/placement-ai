@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { connectDB } from "@/lib/mongodb";
-import { TelegramMessage } from "@/models/TelegramMessage";
+import { supabase } from "@/lib/supabase";
 import { requireAuth } from "@/lib/api-auth";
-import { storeTelegramMessage } from "@/lib/telegram-messages";
+import { storeTelegramMessage } from "@/lib/db-supabase";
 
 export const runtime = "nodejs";
 
@@ -32,13 +31,30 @@ export async function GET(req: Request) {
 
     const limit = Math.min(Number(new URL(req.url).searchParams.get("limit") || 50), 100);
 
-    await connectDB();
-    const messages = await TelegramMessage.find({ groupId })
-      .sort({ sentAt: -1 })
-      .limit(limit)
-      .lean();
+    const { data: messages, error } = await supabase
+      .from("telegram_messages")
+      .select("*")
+      .eq("group_id", groupId)
+      .order("sent_at", { ascending: false })
+      .limit(limit);
 
-    return NextResponse.json(messages.reverse());
+    if (error) {
+      console.error("[GET messages] Supabase error:", error);
+      return NextResponse.json({ error: "Database error" }, { status: 500 });
+    }
+
+    // Map database properties (snake_case) to expected model values (camelCase) if needed
+    const mapped = (messages || []).map((m) => ({
+      _id: m.id,
+      groupId: m.group_id,
+      groupTitle: m.group_title,
+      messageId: m.message_id,
+      text: m.text,
+      senderName: m.sender_name,
+      sentAt: m.sent_at,
+    }));
+
+    return NextResponse.json(mapped.reverse());
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Error";
     return NextResponse.json({ error: msg }, { status: msg === "Unauthorized" ? 401 : 500 });
@@ -62,15 +78,22 @@ export async function POST(req: Request) {
       return NextResponse.json({ skipped: true, reason: "Empty message" });
     }
 
-    await connectDB();
     const result = await storeTelegramMessage({
       groupId: parsed.data.groupId,
       groupTitle: parsed.data.groupTitle,
       messageId: parsed.data.messageId,
       text,
       senderName: parsed.data.senderName,
-      sentAt: new Date(parsed.data.sentAt),
+      sentAt: parsed.data.sentAt,
     });
+
+    if (result.created && result.message) {
+      // Asynchronously trigger AI parsing and calendar / alarm sync
+      void import("@/lib/reminders/auto-setup")
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .then((m) => m.autoProcessNewMessage(result.message as any, parsed.data.groupId))
+        .catch((err) => console.error("[AutoProcess] Failed on POST message:", err));
+    }
 
     return NextResponse.json({ ok: true, ...result });
   } catch (e) {
