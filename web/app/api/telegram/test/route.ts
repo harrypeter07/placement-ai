@@ -4,13 +4,17 @@ import { getTelegramApiCredentials, createTelegramClient } from "@/lib/telegram-
 
 export const runtime = "nodejs";
 
-/** GET — diagnose GramJS connection to Telegram from Vercel */
-export async function GET() {
+/** GET — diagnose GramJS connection or run a code-send test from Vercel */
+export async function GET(req: Request) {
+  const url = new URL(req.url);
+  const phone = url.searchParams.get("phone");
+
   const diagnostics: Record<string, any> = {
     step: "init",
     timestamp: new Date().toISOString(),
     apiId: null,
     apiHashLength: 0,
+    phoneInput: phone,
     envKeys: Object.keys(process.env).filter(k => k.includes("TELEGRAM")),
   };
 
@@ -27,6 +31,24 @@ export async function GET() {
     // Attempt connection
     await client.connect();
     diagnostics.step = "client_connected";
+
+    if (phone) {
+      diagnostics.step = "send_code_attempt";
+      console.log(`[GET telegram/test] Testing sendCode for: ${phone}`);
+      const result = await client.sendCode({ apiId, apiHash }, phone.trim());
+      diagnostics.step = "send_code_success";
+      diagnostics.result = {
+        phoneCodeHash: result.phoneCodeHash,
+        isCodeViaApp: result.isCodeViaApp,
+      };
+      
+      await client.disconnect();
+      return NextResponse.json({
+        ok: true,
+        message: `Successfully sent test code to ${phone}`,
+        diagnostics
+      });
+    }
     
     const isConnected = await client.checkAuthorization();
     diagnostics.isConnected = isConnected;
@@ -45,10 +67,10 @@ export async function GET() {
       stack: err instanceof Error ? err.stack : null,
       name: err instanceof Error ? err.name : null,
     };
-    console.error("[GET telegram/test] GramJS connection failed:", err);
+    console.error("[GET telegram/test] Diagnostics failed:", err);
     return NextResponse.json({
       ok: false,
-      message: "GramJS connection failed",
+      message: "Diagnostics failed",
       step: diagnostics.step,
       error: errorDetails,
       diagnostics
