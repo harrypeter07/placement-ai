@@ -20,9 +20,6 @@ envContent.split('\n').forEach(line => {
 const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseServiceKey = env.SUPABASE_SERVICE_ROLE_KEY;
 
-console.log("Supabase URL:", supabaseUrl);
-console.log("Supabase Service Key Length:", supabaseServiceKey ? supabaseServiceKey.length : 0);
-
 if (!supabaseUrl || !supabaseServiceKey) {
   console.error("Missing env vars!");
   process.exit(1);
@@ -32,20 +29,38 @@ const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 async function run() {
   try {
-    console.log("\n--- Testing users table ---");
-    const { data: users, error: usersErr } = await supabase.from('users').select('*').limit(5);
-    if (usersErr) console.error("users error:", usersErr);
-    else console.log("users table works! Row count:", users.length, "Rows:", users);
+    const userId = '613aaafd-2af6-4177-aef6-305196afcede';
+    console.log("Attempting test upsert for user:", userId);
+    
+    const payload = {
+      user_id: userId,
+      phone: '+919876543210',
+      phone_code_hash: 'test_hash',
+      auth_session_string: 'test_session',
+      expires_at: new Date().toISOString(),
+      last_sent_at: new Date().toISOString(),
+      send_count: 1,
+      step: 'code',
+      updated_at: new Date().toISOString()
+    };
 
-    console.log("\n--- Testing telegram_auth_pendings table ---");
-    const { data: pendings, error: pendingsErr } = await supabase.from('telegram_auth_pendings').select('*').limit(5);
-    if (pendingsErr) console.error("telegram_auth_pendings error:", pendingsErr);
-    else console.log("telegram_auth_pendings table works! Row count:", pendings.length, "Rows:", pendings);
+    const { data, error } = await supabase
+      .from('telegram_auth_pendings')
+      .upsert([payload], { onConflict: 'user_id' })
+      .select();
 
-    console.log("\n--- Testing notifications table ---");
-    const { data: notifications, error: notificationsErr } = await supabase.from('notifications').select('*').limit(5);
-    if (notificationsErr) console.error("notifications error:", notificationsErr);
-    else console.log("notifications table works! Row count:", notifications.length, "Rows:", notifications);
+    if (error) {
+      console.error("Upsert failed:", error);
+    } else {
+      console.log("Upsert succeeded! Row:", data);
+      
+      // Clean up
+      const { error: delErr } = await supabase
+        .from('telegram_auth_pendings')
+        .delete()
+        .eq('user_id', userId);
+      console.log("Cleanup status:", delErr ? "failed" : "succeeded");
+    }
   } catch (err) {
     console.error("Exception caught:", err);
   }
