@@ -31,10 +31,18 @@ export async function createTelegramClient(sessionString = "") {
 export async function sendTelegramCode(phoneNumber: string) {
   const normalized = normalizePhone(phoneNumber);
   const { apiId, apiHash } = getTelegramApiCredentials();
+  console.log(`[GramJS sendTelegramCode] Starting for phone: ${normalized}. ApiID: ${apiId}, ApiHash length: ${apiHash?.length || 0}`);
+  
   const client = await createTelegramClient("");
   try {
+    console.log(`[GramJS sendTelegramCode] Connecting client to Telegram...`);
+    await client.connect();
+    console.log(`[GramJS sendTelegramCode] Client connected. Invoking sendCode...`);
     const result = await client.sendCode({ apiId, apiHash }, normalized);
+    console.log(`[GramJS sendTelegramCode] Code sent. phoneCodeHash: ${result.phoneCodeHash}, isCodeViaApp: ${result.isCodeViaApp}`);
+    
     const authSessionString = String(client.session.save());
+    console.log(`[GramJS sendTelegramCode] Generated temporary session string. Length: ${authSessionString?.length || 0}`);
     if (!authSessionString) {
       throw new Error("Failed to start Telegram auth session");
     }
@@ -45,10 +53,14 @@ export async function sendTelegramCode(phoneNumber: string) {
       authSessionString,
     };
   } catch (err) {
+    console.error(`[GramJS sendTelegramCode] Error during sendCode:`, err);
     const mapped = mapTelegramAuthError(err);
+    console.error(`[GramJS sendTelegramCode] Mapped sendCode error:`, mapped);
     throw new Error(mapped.message);
   } finally {
+    console.log(`[GramJS sendTelegramCode] Disconnecting client...`);
     await client.disconnect();
+    console.log(`[GramJS sendTelegramCode] Client disconnected.`);
   }
 }
 
@@ -60,18 +72,25 @@ export async function completeTelegramLogin(
   code: string,
   password?: string
 ) {
+  console.log(`[GramJS completeTelegramLogin] Starting login for: ${phoneNumber}`);
+  console.log(`[GramJS completeTelegramLogin] hash: ${phoneCodeHash}, sessionLength: ${authSessionString?.length || 0}, hasPassword: ${!!password}`);
+  
   if (!authSessionString?.trim()) {
+    console.error(`[GramJS completeTelegramLogin] Error: authSessionString is missing`);
     throw new Error("Login session missing — resend code and try again");
   }
 
   const otp = sanitizeOtpCode(code);
   if (otp.length < 4) {
+    console.error(`[GramJS completeTelegramLogin] Error: OTP length is too short: "${otp}" (raw: "${code}")`);
     throw new Error("Enter the full code from Telegram or SMS");
   }
 
+  console.log(`[GramJS completeTelegramLogin] Creating client with temporary auth session...`);
   const client = await createTelegramClient(authSessionString);
   try {
     try {
+      console.log(`[GramJS completeTelegramLogin] Invoking SignIn... (otp: ${otp})`);
       await client.invoke(
         new Api.auth.SignIn({
           phoneNumber: normalizePhone(phoneNumber),
@@ -79,17 +98,26 @@ export async function completeTelegramLogin(
           phoneCode: otp,
         })
       );
+      console.log(`[GramJS completeTelegramLogin] SignIn invoked successfully (no password needed).`);
     } catch (err: unknown) {
+      console.warn(`[GramJS completeTelegramLogin] SignIn attempt failed. Checking if 2FA password is required...`, err);
       const mapped = mapTelegramAuthError(err);
+      console.log(`[GramJS completeTelegramLogin] Mapped SignIn error:`, mapped);
+      
       if (mapped.needs2fa) {
         if (!password?.trim()) {
+          console.warn(`[GramJS completeTelegramLogin] 2FA needed but no password was provided.`);
           const e = new Error(mapped.message) as Error & { needs2fa?: boolean };
           e.needs2fa = true;
           throw e;
         }
+        console.log(`[GramJS completeTelegramLogin] 2FA password provided. Fetching password parameters...`);
         const passwordSrpResult = await client.invoke(new Api.account.GetPassword());
+        console.log(`[GramJS completeTelegramLogin] Computing SRP password check...`);
         const passwordCheck = await computeCheck(passwordSrpResult, password.trim());
+        console.log(`[GramJS completeTelegramLogin] Invoking CheckPassword...`);
         await client.invoke(new Api.auth.CheckPassword({ password: passwordCheck }));
+        console.log(`[GramJS completeTelegramLogin] 2FA verification succeeded.`);
       } else {
         const e = new Error(mapped.message) as Error & {
           errorCode?: string;
@@ -103,12 +131,21 @@ export async function completeTelegramLogin(
       }
     }
 
+    console.log(`[GramJS completeTelegramLogin] Generating authenticated session string...`);
     const sessionString = String(client.session.save());
+    console.log(`[GramJS completeTelegramLogin] Generated sessionString. Length: ${sessionString?.length || 0}`);
     if (!sessionString) {
       throw new Error("Login succeeded but session could not be saved");
     }
+    
+    console.log(`[GramJS completeTelegramLogin] Exporting telethon session string...`);
     const telethonSessionString = exportTelethonSessionString(client) || undefined;
+    console.log(`[GramJS completeTelegramLogin] Exported telethonSessionString length: ${telethonSessionString?.length || 0}`);
+    
+    console.log(`[GramJS completeTelegramLogin] Fetching me details...`);
     const me = await client.getMe();
+    console.log(`[GramJS completeTelegramLogin] Logged in user: id=${me?.id}, username=${me?.username}`);
+    
     return {
       sessionString,
       telethonSessionString,
@@ -118,8 +155,10 @@ export async function completeTelegramLogin(
       displayName: [me?.firstName, me?.lastName].filter(Boolean).join(" ") || undefined,
     };
   } catch (err) {
+    console.error(`[GramJS completeTelegramLogin] Error completeTelegramLogin:`, err);
     if (err instanceof Error && (err as Error & { needs2fa?: boolean }).needs2fa) throw err;
     const mapped = mapTelegramAuthError(err);
+    console.error(`[GramJS completeTelegramLogin] Final mapped error:`, mapped);
     const e = new Error(mapped.message) as Error & {
       needs2fa?: boolean;
       errorCode?: string;
@@ -132,7 +171,9 @@ export async function completeTelegramLogin(
     e.invalidCode = mapped.invalidCode;
     throw e;
   } finally {
+    console.log(`[GramJS completeTelegramLogin] Disconnecting client...`);
     await client.disconnect();
+    console.log(`[GramJS completeTelegramLogin] Client disconnected.`);
   }
 }
 

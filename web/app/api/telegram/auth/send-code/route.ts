@@ -33,37 +33,52 @@ export async function POST(req: Request) {
   try {
     const user = await requireAuth();
     const body = await req.json();
+    console.log(`[POST send-code] Request received. user: ${user.id}, body:`, body);
+
     const parsed = schema.safeParse(body);
     if (!parsed.success) {
+      console.warn(`[POST send-code] Zod validation failed:`, parsed.error.format());
       return NextResponse.json({ error: "Invalid phone number" }, { status: 400 });
     }
 
     const phoneNumber = resolvePhone(parsed.data);
+    console.log(`[POST send-code] Resolved phone number to: ${phoneNumber}`);
 
     // Query pending auth from Supabase
-    const { data: existing } = await supabase
+    console.log(`[POST send-code] Querying telegram_auth_pendings for user: ${user.id}`);
+    const { data: existing, error: fetchErr } = await supabase
       .from("telegram_auth_pendings")
       .select("id, last_sent_at, send_count, phone")
       .eq("user_id", user.id)
       .maybeSingle();
 
-    if (existing && !parsed.data.resend) {
-      const elapsed = Date.now() - new Date(existing.last_sent_at).getTime();
-      if (elapsed < TELEGRAM_RESEND_COOLDOWN_MS) {
-        const waitSec = Math.ceil((TELEGRAM_RESEND_COOLDOWN_MS - elapsed) / 1000);
-        return NextResponse.json(
-          {
-            error: `Wait ${waitSec}s before requesting another code`,
-            retryAfterSec: waitSec,
-          },
-          { status: 429 }
-        );
+    if (fetchErr) {
+      console.error(`[POST send-code] Supabase fetch pending error:`, fetchErr);
+      return NextResponse.json({ error: "Database query failed" }, { status: 500 });
+    }
+
+    if (existing) {
+      console.log(`[POST send-code] Existing pending record found:`, existing);
+      if (!parsed.data.resend) {
+        const elapsed = Date.now() - new Date(existing.last_sent_at).getTime();
+        if (elapsed < TELEGRAM_RESEND_COOLDOWN_MS) {
+          const waitSec = Math.ceil((TELEGRAM_RESEND_COOLDOWN_MS - elapsed) / 1000);
+          console.warn(`[POST send-code] Request rate limited. Wait: ${waitSec}s`);
+          return NextResponse.json(
+            {
+              error: `Wait ${waitSec}s before requesting another code`,
+              retryAfterSec: waitSec,
+            },
+            { status: 429 }
+          );
+        }
       }
     }
 
     if (existing?.send_count && existing.send_count >= TELEGRAM_MAX_SENDS_PER_HOUR) {
       const hourAgo = Date.now() - 60 * 60 * 1000;
       if (new Date(existing.last_sent_at).getTime() > hourAgo) {
+        console.warn(`[POST send-code] Maximum sends per hour reached for user: ${user.id}`);
         return NextResponse.json(
           { error: "Too many codes sent. Try again in an hour." },
           { status: 429 }
@@ -71,7 +86,10 @@ export async function POST(req: Request) {
       }
     }
 
+    console.log(`[POST send-code] Dispatching sendTelegramCode for phone: ${phoneNumber}...`);
     const sent = await sendTelegramCode(phoneNumber);
+    console.log(`[POST send-code] sendTelegramCode successful. phoneCodeHash: ${sent.phoneCodeHash}`);
+
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
     const sendCount =
       existing && new Date(existing.last_sent_at).getTime() > Date.now() - 60 * 60 * 1000
@@ -91,9 +109,16 @@ export async function POST(req: Request) {
       updated_at: new Date().toISOString()
     };
 
-    await supabase
+    console.log(`[POST send-code] Upserting pending auth record in Supabase...`);
+    const { error: upsertErr } = await supabase
       .from("telegram_auth_pendings")
       .upsert([payload], { onConflict: "user_id" });
+
+    if (upsertErr) {
+      console.error(`[POST send-code] Supabase upsert error:`, upsertErr);
+      throw new Error("Failed to store pending auth session");
+    }
+    console.log(`[POST send-code] Pending auth record upserted successfully.`);
 
     return NextResponse.json({
       ok: true,
@@ -106,6 +131,7 @@ export async function POST(req: Request) {
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Error";
+    console.error(`[POST send-code] Fatal error:`, e);
     return NextResponse.json({ error: msg }, { status: msg === "Unauthorized" ? 401 : 500 });
   }
 }
