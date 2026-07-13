@@ -9,6 +9,8 @@ export type ApplyInsightOptions = {
   createReminders?: boolean;
   pinToOverview?: boolean;
   markApplied?: boolean;
+  callTime?: string;
+  enablePhoneCall?: boolean;
 };
 
 export type AppliedInsightResult = {
@@ -202,7 +204,7 @@ export async function applySingleInsight(
   if (createReminders && master && autoRm && prefs?.automation?.aiAutoReminders !== false && deadlineId) {
     const { data: deadline } = await supabase
       .from("deadlines")
-      .select("id, deadline_date")
+      .select("id, deadline_date, company, role")
       .eq("id", deadlineId)
       .maybeSingle();
 
@@ -257,6 +259,58 @@ export async function applySingleInsight(
         } else {
           remindersCreated += 1;
           reminderSchedule.push({ minutesBefore: minutes, label: offsetLabel(minutes) });
+        }
+      }
+
+      if (opts.enablePhoneCall !== false) {
+        const defaultTime = prefs?.twilio_voice_settings?.defaultCallTime || "09:00";
+        const callTimeStr = opts.callTime || defaultTime;
+        const datePart = new Date(deadline.deadline_date).toISOString().slice(0, 10);
+        const scheduledCallAt = new Date(`${datePart}T${callTimeStr}:00+05:30`);
+
+        if (scheduledCallAt > new Date()) {
+          const callPayload = {
+            user_id: userId,
+            deadline_id: deadline.id,
+            scheduled_at: scheduledCallAt.toISOString(),
+            minutes_before_deadline: 0,
+            offset: "call",
+            channels: ["phoneCall"],
+            title: `${deadline.company || "Company"} — Call Alert`,
+            message: `Phone call alert: Deadline for ${deadline.company || "Company"} (${deadline.role || "Role"}) is today!`,
+            priority,
+            status: "active",
+            enabled: true,
+            ai_suggested: true,
+            sent: false,
+            repeat_rule: "none",
+            escalation_level: priorityToEscalation(priority as any),
+            escalation_count: 0,
+            reminder_style: "aggressive",
+            call_time: callTimeStr,
+            call_status: "pending",
+            updated_at: new Date().toISOString()
+          };
+
+          // Delete existing call reminders for this deadline
+          await supabase
+            .from("reminders")
+            .delete()
+            .eq("user_id", userId)
+            .eq("deadline_id", deadline.id)
+            .eq("sent", false)
+            .contains("channels", ["phoneCall"]);
+
+          const { error: callErr } = await supabase
+            .from("reminders")
+            .insert([callPayload]);
+
+          if (callErr) {
+            console.error("[apply-chat-insights] insert call reminder error:", callErr);
+          } else {
+            remindersCreated += 1;
+            reminderSchedule.push({ minutesBefore: 0, label: `Call Alert at ${callTimeStr}` });
+          }
         }
       }
     }

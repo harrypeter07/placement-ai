@@ -158,7 +158,12 @@ export default function NotificationsPage() {
   }, []);
 
   const setDeadlineIds = useCallback(
-    async (ids: string[], pinToOverview: boolean) => {
+    async (
+      ids: string[],
+      pinToOverview: boolean,
+      callTimes?: Record<string, string>,
+      enablePhoneCalls?: Record<string, boolean>
+    ) => {
       const clean = ids.map(insightIdString).filter(Boolean);
       if (!clean.length) {
         toast.error("This item has no parseable deadline to set");
@@ -174,6 +179,8 @@ export default function NotificationsPage() {
             createDeadlines: true,
             createReminders: true,
             pinToOverview,
+            callTimes,
+            enablePhoneCalls,
           }),
         });
         const data = await res.json();
@@ -722,8 +729,8 @@ export default function NotificationsPage() {
                         analyzedMessageCount={analyzedMsgCount}
                         processingNotes={insightNotes}
                         applying={applyingInsights}
-                        onSetDeadline={(id, opts) => setDeadlineIds([id], opts.pinToOverview)}
-                        onSetAllDeadlines={(ids, opts) => setDeadlineIds(ids, opts.pinToOverview)}
+                        onSetDeadline={(id, opts) => setDeadlineIds([id], opts.pinToOverview, opts.callTimes, opts.enablePhoneCalls)}
+                        onSetAllDeadlines={(ids, opts) => setDeadlineIds(ids, opts.pinToOverview, opts.callTimes, opts.enablePhoneCalls)}
                         onDismiss={(ids) => dismissInsightIds(ids)}
                       />
                     </div>

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { AlarmClock, Calendar, Check, Sparkles, X } from "lucide-react";
+import { Calendar, Check, Sparkles, X, PhoneCall, CheckSquare, Square } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -40,11 +40,7 @@ export type InsightRow = {
   reminderCount?: number;
 };
 
-function offsetLabel(minutes: number) {
-  if (minutes >= 24 * 60) return `${Math.round(minutes / (24 * 60))}d before`;
-  if (minutes >= 60) return `${Math.round(minutes / 60)}h before`;
-  return `${minutes}m before`;
-}
+
 
 const urgencyClass: Record<string, string> = {
   critical: "bg-red-500/20 text-red-300",
@@ -65,29 +61,91 @@ export function InsightsAnalysisPanel({
   insights: InsightRow[];
   analyzedMessageCount?: number;
   processingNotes?: string;
-  onSetDeadline: (id: string, opts: { pinToOverview: boolean }) => Promise<void>;
-  onSetAllDeadlines: (ids: string[], opts: { pinToOverview: boolean }) => Promise<void>;
+  onSetDeadline: (id: string, opts: { pinToOverview: boolean; callTimes?: Record<string, string>; enablePhoneCalls?: Record<string, boolean> }) => Promise<void>;
+  onSetAllDeadlines: (ids: string[], opts: { pinToOverview: boolean; callTimes?: Record<string, string>; enablePhoneCalls?: Record<string, boolean> }) => Promise<void>;
   onDismiss?: (ids: string[]) => Promise<void>;
   applying?: boolean;
 }) {
   const [pinOverview, setPinOverview] = useState(true);
 
+  // Filter lists
   const drafts = useMemo(
-    () =>
-      insights.filter((i) => i.status !== "applied" && i.status !== "dismissed"),
+    () => insights.filter((i) => i.status !== "applied" && i.status !== "dismissed"),
     [insights]
   );
-
   const deadlineDrafts = useMemo(
     () => drafts.filter((i) => isActionableDeadlineInsight(i)),
     [drafts]
   );
-
   const infoDrafts = useMemo(() => drafts.filter((i) => isInfoOnlyInsight(i)), [drafts]);
 
-  const deadlineIds = deadlineDrafts.map((i) => insightIdString(i._id)).filter(Boolean);
+  // States for selection and custom call settings
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => {
+    const initial = new Set<string>();
+    deadlineDrafts.forEach((d) => {
+      const id = insightIdString(d._id);
+      if (id) initial.add(id);
+    });
+    return initial;
+  });
+
+  const [callTimes, setCallTimes] = useState<Record<string, string>>(() => {
+    const initial: Record<string, string> = {};
+    deadlineDrafts.forEach((d) => {
+      const id = insightIdString(d._id);
+      if (id) initial[id] = "09:00";
+    });
+    return initial;
+  });
+
+  const [enablePhoneCalls, setEnablePhoneCalls] = useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = {};
+    deadlineDrafts.forEach((d) => {
+      const id = insightIdString(d._id);
+      if (id) initial[id] = true;
+    });
+    return initial;
+  });
+
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    const allCleanIds = deadlineDrafts.map((d) => insightIdString(d._id)).filter(Boolean) as string[];
+    if (selectedIds.size === allCleanIds.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(allCleanIds));
+    }
+  };
+
+  const handleBulkApply = async () => {
+    const idsToApply = Array.from(selectedIds);
+    if (!idsToApply.length) return;
+    await onSetAllDeadlines(idsToApply, {
+      pinToOverview: pinOverview,
+      callTimes,
+      enablePhoneCalls,
+    });
+  };
+
+  const handleSingleApply = async (id: string) => {
+    await onSetDeadline(id, {
+      pinToOverview: pinOverview,
+      callTimes,
+      enablePhoneCalls,
+    });
+  };
 
   if (!insights.length) return null;
+
+  const isAllSelected = deadlineDrafts.length > 0 && selectedIds.size === deadlineDrafts.length;
 
   return (
     <div className="space-y-4">
@@ -107,23 +165,42 @@ export function InsightsAnalysisPanel({
           )}
           <p className="text-xs text-muted-foreground">
             {deadlineDrafts.length > 0
-              ? `${deadlineDrafts.length} with deadlines — use Set deadline to add to your calendar.`
+              ? `${deadlineDrafts.length} with deadlines — select deadlines to add to your calendar & schedule calls.`
               : "No deadlines detected in this batch."}
             {infoDrafts.length > 0 &&
               ` ${infoDrafts.length} info-only (no deadline to set).`}
           </p>
         </CardHeader>
         {deadlineDrafts.length > 0 && (
-          <CardContent className="flex flex-wrap gap-2 items-center pt-0">
-            <LoadingButton
-              size="sm"
-              variant="glow"
-              loading={applying}
-              onClick={() => void onSetAllDeadlines(deadlineIds, { pinToOverview: pinOverview })}
-            >
-              <Calendar className="h-4 w-4 mr-1" />
-              Set all deadlines ({deadlineDrafts.length})
-            </LoadingButton>
+          <CardContent className="flex flex-wrap gap-4 items-center pt-2">
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 text-xs border-white/10 hover:bg-white/5"
+                onClick={toggleSelectAll}
+              >
+                {isAllSelected ? (
+                  <>
+                    <CheckSquare className="h-3.5 w-3.5 mr-1 text-primary" /> Deselect All
+                  </>
+                ) : (
+                  <>
+                    <Square className="h-3.5 w-3.5 mr-1" /> Select All
+                  </>
+                )}
+              </Button>
+              <LoadingButton
+                size="sm"
+                variant="glow"
+                loading={applying}
+                disabled={selectedIds.size === 0}
+                onClick={handleBulkApply}
+              >
+                <Calendar className="h-4 w-4 mr-1" />
+                Set Selected ({selectedIds.size})
+              </LoadingButton>
+            </div>
             <div className="flex items-center gap-2 text-xs ml-auto">
               <Switch id="pin-overview" checked={pinOverview} onCheckedChange={setPinOverview} />
               <Label htmlFor="pin-overview" className="cursor-pointer">
@@ -134,17 +211,27 @@ export function InsightsAnalysisPanel({
         )}
       </Card>
 
-      {deadlineDrafts.map((ins, idx) => (
-        <InsightCard
-          key={insightIdString(ins._id) || `dl-${idx}`}
-          ins={ins}
-          idx={idx}
-          applying={applying}
-          pinOverview={pinOverview}
-          variant="deadline"
-          onSetDeadline={onSetDeadline}
-        />
-      ))}
+      {deadlineDrafts.map((ins, idx) => {
+        const id = insightIdString(ins._id);
+        const isSelected = id ? selectedIds.has(id) : false;
+
+        return (
+          <InsightCard
+            key={id || `dl-${idx}`}
+            ins={ins}
+            idx={idx}
+            applying={applying}
+            variant="deadline"
+            isSelected={isSelected}
+            onToggleSelect={id ? () => toggleSelect(id) : undefined}
+            callTime={id ? callTimes[id] || "09:00" : "09:00"}
+            onCallTimeChange={id ? (val) => setCallTimes(p => ({ ...p, [id]: val })) : undefined}
+            enablePhoneCall={id ? enablePhoneCalls[id] !== false : true}
+            onTogglePhoneCall={id ? (val) => setEnablePhoneCalls(p => ({ ...p, [id]: val })) : undefined}
+            onSetDeadline={id ? () => handleSingleApply(id) : undefined}
+          />
+        );
+      })}
 
       {infoDrafts.map((ins, idx) => (
         <InsightCard
@@ -152,7 +239,6 @@ export function InsightsAnalysisPanel({
           ins={ins}
           idx={idx}
           applying={applying}
-          pinOverview={pinOverview}
           variant="info"
           onDismiss={onDismiss}
         />
@@ -177,7 +263,12 @@ function InsightCard({
   idx,
   variant,
   applying,
-  pinOverview,
+  isSelected,
+  onToggleSelect,
+  callTime,
+  onCallTimeChange,
+  enablePhoneCall,
+  onTogglePhoneCall,
   onSetDeadline,
   onDismiss,
 }: {
@@ -185,8 +276,13 @@ function InsightCard({
   idx: number;
   variant: "deadline" | "info" | "done";
   applying?: boolean;
-  pinOverview?: boolean;
-  onSetDeadline?: (id: string, opts: { pinToOverview: boolean }) => Promise<void>;
+  isSelected?: boolean;
+  onToggleSelect?: () => void;
+  callTime?: string;
+  onCallTimeChange?: (val: string) => void;
+  enablePhoneCall?: boolean;
+  onTogglePhoneCall?: (val: boolean) => void;
+  onSetDeadline?: () => Promise<void>;
   onDismiss?: (ids: string[]) => Promise<void>;
 }) {
   const id = insightIdString(ins._id);
@@ -199,86 +295,116 @@ function InsightCard({
     >
       <Card
         className={cn(
-          "glass overflow-hidden",
+          "glass overflow-hidden transition-all duration-300",
           ins.status === "applied" && "border-green-500/30",
-          variant === "info" && "border-white/10"
+          variant === "info" && "border-white/10",
+          isSelected && "border-primary/50 shadow-[0_0_15px_rgba(99,102,241,0.15)] bg-primary/5"
         )}
       >
         <CardContent className="p-4 space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs text-muted-foreground">#{ins.rank}</span>
-            <h3 className="font-semibold flex-1 min-w-0">{ins.title}</h3>
-            <Badge className={cn("text-[10px]", urgencyClass[ins.urgency] || urgencyClass.medium)}>
-              {ins.urgency}
-            </Badge>
-            {ins.status === "applied" && (
-              <Badge variant="success" className="text-[10px]">
-                <Check className="h-3 w-3 mr-0.5" /> Saved
-              </Badge>
+          <div className="flex items-start gap-3">
+            {variant === "deadline" && ins.status === "draft" && onToggleSelect && (
+              <input
+                type="checkbox"
+                checked={isSelected}
+                onChange={onToggleSelect}
+                className="mt-1 h-4.5 w-4.5 rounded border-white/20 bg-white/5 text-primary focus:ring-primary focus:ring-offset-background cursor-pointer"
+              />
             )}
-            {ins.status === "dismissed" && (
-              <Badge variant="outline" className="text-[10px]">
-                Dismissed
-              </Badge>
-            )}
-            {variant === "info" && ins.status === "draft" && (
-              <Badge variant="outline" className="text-[10px]">
-                Info
-              </Badge>
-            )}
+            <div className="flex-1 min-w-0 space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-muted-foreground">#{ins.rank}</span>
+                <h3 className="font-semibold flex-1 min-w-0 text-foreground">{ins.title}</h3>
+                <Badge className={cn("text-[10px]", urgencyClass[ins.urgency] || urgencyClass.medium)}>
+                  {ins.urgency}
+                </Badge>
+                {ins.status === "applied" && (
+                  <Badge variant="success" className="text-[10px]">
+                    <Check className="h-3 w-3 mr-0.5" /> Saved
+                  </Badge>
+                )}
+                {ins.status === "dismissed" && (
+                  <Badge variant="outline" className="text-[10px]">
+                    Dismissed
+                  </Badge>
+                )}
+                {variant === "info" && ins.status === "draft" && (
+                  <Badge variant="outline" className="text-[10px]">
+                    Info
+                  </Badge>
+                )}
+              </div>
+              <p className="text-sm whitespace-pre-wrap text-muted-foreground leading-relaxed">{ins.summary}</p>
+            </div>
           </div>
 
-          <p className="text-sm whitespace-pre-wrap text-muted-foreground">{ins.summary}</p>
-
           {ins.whyRanked && variant === "deadline" && (
-            <p className="text-xs text-primary/80">
+            <p className="text-xs text-primary/85 bg-primary/5 px-2.5 py-1.5 rounded-md border border-primary/10">
               <strong>Why:</strong> {ins.whyRanked}
             </p>
           )}
 
-          <p className="text-[10px] text-muted-foreground">
-            {ins.groupTitle || ins.groupId}
-          </p>
+          <div className="flex justify-between items-center text-[10px] text-muted-foreground border-t border-white/5 pt-2">
+            <span>{ins.groupTitle || ins.groupId}</span>
+          </div>
 
           {variant === "deadline" && ins.extractedDeadline?.company && (
-            <div className="rounded-lg bg-primary/10 p-3 text-sm space-y-1">
-              <p className="font-medium flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-primary" />
-                {ins.extractedDeadline.company} — {ins.extractedDeadline.role || "Role"}
-              </p>
-              <p className="text-muted-foreground">
-                Due: {formatDate(ins.extractedDeadline.deadline)}
-              </p>
-              {(ins.suggestedReminderOffsetsMinutes?.length ?? 0) > 0 && (
-                <div className="flex flex-wrap gap-1 pt-1">
-                  <AlarmClock className="h-3.5 w-3.5 text-amber-400" />
-                  {ins.suggestedReminderOffsetsMinutes!.map((m) => (
-                    <Badge key={m} variant="outline" className="text-[10px]">
-                      {offsetLabel(m)}
-                    </Badge>
-                  ))}
+            <div className="rounded-lg bg-primary/10 p-3.5 text-sm space-y-3 border border-primary/20">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <p className="font-semibold flex items-center gap-2 text-foreground">
+                  <Calendar className="h-4 w-4 text-primary" />
+                  {ins.extractedDeadline.company} — {ins.extractedDeadline.role || "Role"}
+                </p>
+                <span className="text-xs bg-white/5 px-2 py-0.5 rounded text-primary-foreground font-medium">
+                  Due: {formatDate(ins.extractedDeadline.deadline)}
+                </span>
+              </div>
+
+              {ins.status === "draft" && onCallTimeChange && onTogglePhoneCall && (
+                <div className="pt-2.5 border-t border-white/5 flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <PhoneCall className="h-4 w-4 text-emerald-400" />
+                    <span className="text-xs font-medium text-foreground">Twilio Voice Alert</span>
+                    <Switch
+                      checked={enablePhoneCall}
+                      onCheckedChange={onTogglePhoneCall}
+                    />
+                  </div>
+                  {enablePhoneCall && (
+                    <div className="flex items-center gap-2">
+                      <Label className="text-xs text-muted-foreground">Call at:</Label>
+                      <input
+                        type="time"
+                        value={callTime}
+                        onChange={(e) => onCallTimeChange(e.target.value)}
+                        className="bg-black/40 border border-white/10 rounded px-2 py-0.5 text-xs text-foreground focus:outline-none focus:border-primary w-24 text-center"
+                      />
+                    </div>
+                  )}
                 </div>
               )}
             </div>
           )}
 
           {variant === "deadline" && ins.status === "draft" && onSetDeadline && id && (
-            <LoadingButton
-              size="sm"
-              variant="glow"
-              loading={applying}
-              className="w-full sm:w-auto"
-              onClick={() => void onSetDeadline(id, { pinToOverview: pinOverview ?? true })}
-            >
-              <Calendar className="h-4 w-4 mr-1" /> Set deadline
-            </LoadingButton>
+            <div className="flex gap-2 pt-1">
+              <LoadingButton
+                size="sm"
+                variant="glow"
+                loading={applying}
+                className="w-full sm:w-auto"
+                onClick={onSetDeadline}
+              >
+                <Calendar className="h-4 w-4 mr-1" /> Set deadline
+              </LoadingButton>
+            </div>
           )}
 
           {variant === "info" && ins.status === "draft" && onDismiss && id && (
             <Button
               size="sm"
               variant="ghost"
-              className="text-muted-foreground"
+              className="text-muted-foreground hover:text-foreground"
               disabled={applying}
               onClick={() => void onDismiss([id])}
             >
@@ -287,9 +413,9 @@ function InsightCard({
           )}
 
           {(ins.reminderCount ?? 0) > 0 && ins.status === "applied" && (
-            <p className="text-xs text-green-400">
-              {ins.reminderCount} reminder(s) scheduled
-              {ins.deadlineId ? " · on Deadlines page" : ""}
+            <p className="text-xs text-green-400 flex items-center gap-1.5 font-medium">
+              <Check className="h-3.5 w-3.5" />
+              {ins.reminderCount} reminder(s) / call schedules set (view in Call Alerts or Reminders)
             </p>
           )}
         </CardContent>

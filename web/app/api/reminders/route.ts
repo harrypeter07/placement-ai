@@ -28,13 +28,14 @@ function resolveMinutes(r: { minutesBeforeDeadline?: number | null; offset?: str
 
 const postSchema = z.object({
   deadlineId: z.string(),
-  channels: z.array(z.enum(["browser", "email", "telegram", "dashboard"])),
+  channels: z.array(z.enum(["browser", "email", "telegram", "dashboard", "phoneCall"])),
   offsets: z.array(z.enum(["1d", "6h", "1h", "15m"])).optional(),
   customMinutesBefore: z.array(z.number().min(5).max(43200)).optional(),
   title: z.string().optional(),
   message: z.string().optional(),
   priority: z.enum(["low", "medium", "high", "critical"]).optional(),
   aiSuggested: z.boolean().optional(),
+  callTime: z.string().optional(),
 });
 
 export async function GET() {
@@ -129,15 +130,6 @@ export async function POST(req: Request) {
       .eq("sent", false)
       .in("status", ["active", "paused", "snoozed"]);
 
-    const minuteList: number[] =
-      parsed.data.customMinutesBefore?.length && parsed.data.customMinutesBefore.length > 0
-        ? [...new Set(parsed.data.customMinutesBefore)]
-        : (parsed.data.offsets?.length
-            ? [...new Set(parsed.data.offsets.map((o) => OFFSET_PRESET_MINUTES[o]))]
-            : prefs?.reminders_config?.defaultOffsetsMinutes?.length
-              ? [...new Set(prefs.reminders_config.defaultOffsetsMinutes as number[])]
-              : [24 * 60, 6 * 60, 60]);
-
     const priority = parsed.data.priority || "medium";
     const titleBase = parsed.data.title || `${deadline.company} — ${deadline.role}`;
     const messageBase =
@@ -147,50 +139,115 @@ export async function POST(req: Request) {
     const created = [];
     const dl = new Date(deadline.deadline_date).getTime();
 
-    for (const minutes of minuteList) {
-      const scheduledAt = new Date(dl - minutes * 60 * 1000);
-      if (scheduledAt <= new Date()) continue;
+    const standardChannels = parsed.data.channels.filter((c) => c !== "phoneCall");
+    const hasPhoneCall = parsed.data.channels.includes("phoneCall");
 
-      const offsetPreset = Object.entries(OFFSET_PRESET_MINUTES).find(([, v]) => v === minutes)?.[0] || "custom";
+    if (standardChannels.length > 0) {
+      const minuteList: number[] =
+        parsed.data.customMinutesBefore?.length && parsed.data.customMinutesBefore.length > 0
+          ? [...new Set(parsed.data.customMinutesBefore)]
+          : (parsed.data.offsets?.length
+              ? [...new Set(parsed.data.offsets.map((o) => OFFSET_PRESET_MINUTES[o]))]
+              : prefs?.reminders_config?.defaultOffsetsMinutes?.length
+                ? [...new Set(prefs.reminders_config.defaultOffsetsMinutes as number[])]
+                : [24 * 60, 6 * 60, 60]);
 
-      const escalationLevel =
-        priorityToEscalation(priority as any) ||
-        prefs?.reminders_config?.defaultEscalation ||
-        "normal";
+      for (const minutes of minuteList) {
+        const scheduledAt = new Date(dl - minutes * 60 * 1000);
+        if (scheduledAt <= new Date()) continue;
 
-      const payload = {
-        user_id: user.id,
-        deadline_id: deadline.id,
-        scheduled_at: scheduledAt.toISOString(),
-        offset: offsetPreset === "custom" ? "custom" : offsetPreset,
-        minutes_before_deadline: minutes,
-        channels: parsed.data.channels,
-        title: titleBase,
-        message: messageBase,
-        priority,
-        status: "active",
-        enabled: true,
-        ai_suggested: parsed.data.aiSuggested ?? false,
-        sent: false,
-        escalation_level: escalationLevel,
-        escalation_count: 0,
-        reminder_style: priority === "critical" || priority === "high" ? "aggressive" : "balanced",
-        updated_at: new Date().toISOString(),
-      };
+        const offsetPreset = Object.entries(OFFSET_PRESET_MINUTES).find(([, v]) => v === minutes)?.[0] || "custom";
 
-      const { data: doc, error: insertError } = await supabase
-        .from("reminders")
-        .insert([payload])
-        .select("*")
-        .single();
+        const escalationLevel =
+          priorityToEscalation(priority as any) ||
+          prefs?.reminders_config?.defaultEscalation ||
+          "normal";
 
-      if (insertError) {
-        console.error("[POST reminders] Supabase insert error:", insertError);
-      } else if (doc) {
-        created.push({
-          ...doc,
-          _id: doc.id,
-        });
+        const payload = {
+          user_id: user.id,
+          deadline_id: deadline.id,
+          scheduled_at: scheduledAt.toISOString(),
+          offset: offsetPreset === "custom" ? "custom" : offsetPreset,
+          minutes_before_deadline: minutes,
+          channels: standardChannels,
+          title: titleBase,
+          message: messageBase,
+          priority,
+          status: "active",
+          enabled: true,
+          ai_suggested: parsed.data.aiSuggested ?? false,
+          sent: false,
+          escalation_level: escalationLevel,
+          escalation_count: 0,
+          reminder_style: priority === "critical" || priority === "high" ? "aggressive" : "balanced",
+          updated_at: new Date().toISOString(),
+        };
+
+        const { data: doc, error: insertError } = await supabase
+          .from("reminders")
+          .insert([payload])
+          .select("*")
+          .single();
+
+        if (insertError) {
+          console.error("[POST reminders] Supabase insert error:", insertError);
+        } else if (doc) {
+          created.push({
+            ...doc,
+            _id: doc.id,
+          });
+        }
+      }
+    }
+
+    if (hasPhoneCall) {
+      const defaultTime = prefs?.twilio_voice_settings?.defaultCallTime || "09:00";
+      const callTimeStr = parsed.data.callTime || defaultTime;
+      const datePart = new Date(deadline.deadline_date).toISOString().slice(0, 10);
+      const scheduledCallAt = new Date(`${datePart}T${callTimeStr}:00+05:30`);
+
+      if (scheduledCallAt > new Date()) {
+        const escalationLevel =
+          priorityToEscalation(priority as any) ||
+          prefs?.reminders_config?.defaultEscalation ||
+          "normal";
+
+        const callPayload = {
+          user_id: user.id,
+          deadline_id: deadline.id,
+          scheduled_at: scheduledCallAt.toISOString(),
+          offset: "call",
+          minutes_before_deadline: 0,
+          channels: ["phoneCall"],
+          title: `${deadline.company} — Call Alert`,
+          message: `Phone call alert: Deadline for ${deadline.company} (${deadline.role}) is today!`,
+          priority,
+          status: "active",
+          enabled: true,
+          ai_suggested: parsed.data.aiSuggested ?? false,
+          sent: false,
+          escalation_level: escalationLevel,
+          escalation_count: 0,
+          reminder_style: "aggressive",
+          call_time: callTimeStr,
+          call_status: "pending",
+          updated_at: new Date().toISOString(),
+        };
+
+        const { data: callDoc, error: callInsertError } = await supabase
+          .from("reminders")
+          .insert([callPayload])
+          .select("*")
+          .single();
+
+        if (callInsertError) {
+          console.error("[POST reminders] Supabase call insert error:", callInsertError);
+        } else if (callDoc) {
+          created.push({
+            ...callDoc,
+            _id: callDoc.id,
+          });
+        }
       }
     }
 

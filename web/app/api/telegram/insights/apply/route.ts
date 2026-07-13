@@ -14,6 +14,8 @@ const schema = z.object({
   createDeadlines: z.boolean().default(true),
   createReminders: z.boolean().default(true),
   pinToOverview: z.boolean().optional(),
+  callTimes: z.record(z.string()).optional(),
+  enablePhoneCalls: z.record(z.boolean()).optional(),
 });
 
 /** POST — apply selected draft insights (deadlines + reminders) */
@@ -79,11 +81,17 @@ export async function POST(req: Request) {
     let reminders = 0;
 
     for (const row of actionable) {
+      const insightId = row.id;
+      const callTime = parsed.data.callTimes?.[insightId];
+      const enablePhoneCall = parsed.data.enablePhoneCalls?.[insightId] ?? true;
+
       const applied = await applySingleInsight(user.id, row, prefs, {
         createDeadlines: parsed.data.createDeadlines,
         createReminders: parsed.data.createReminders,
         pinToOverview,
         markApplied: true,
+        callTime,
+        enablePhoneCall,
       });
       results.push(applied);
       if (applied.deadlineCreated) deadlines += 1;

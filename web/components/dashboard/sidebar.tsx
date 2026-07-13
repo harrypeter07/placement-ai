@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import {
   LayoutDashboard, Clock, Calendar, Bell, CheckCircle, FileText,
-  BarChart3, Settings, Sparkles, LogOut, Menu, X, AlarmClock, Zap,
+  BarChart3, Settings, Sparkles, LogOut, Menu, X, AlarmClock, Zap, PhoneCall
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { siteConfig } from "@/config/site";
@@ -15,7 +15,7 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAppStore } from "@/store/use-app-store";
 
 const icons: Record<string, React.ElementType> = {
-  LayoutDashboard, Clock, Calendar, Bell, CheckCircle, FileText, BarChart3, Settings, AlarmClock, Zap, Sparkles,
+  LayoutDashboard, Clock, Calendar, Bell, CheckCircle, FileText, BarChart3, Settings, AlarmClock, Zap, Sparkles, PhoneCall
 };
 
 export function DashboardSidebar() {
