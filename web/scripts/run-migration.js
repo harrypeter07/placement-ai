@@ -1,36 +1,37 @@
 const { Client } = require('pg');
-const fs = require('fs');
-const path = require('path');
-const dns = require('dns');
 
-if (dns.setDefaultResultOrder) {
-  dns.setDefaultResultOrder('verbatim');
-}
+// Try connecting to Supabase Pooler
+const connectionString = "postgresql://postgres.oybdgtsrlkqiishkpncf:NbBFU2T3%2F%2F%5EsdQc@aws-1-ap-northeast-2.pooler.supabase.com:5432/postgres";
 
-const connectionString = 'postgresql://postgres.oybdgtsrlkqiishkpncf:NbBFU2T3%2F%2F%5EsdQc@aws-1-ap-northeast-2.pooler.supabase.com:5432/postgres';
+const client = new Client({
+  connectionString: connectionString
+});
 
-async function main() {
-  const sqlPath = path.join(__dirname, '../../supabase_schema.sql');
-  console.log('Reading migration file:', sqlPath);
-  const sql = fs.readFileSync(sqlPath, 'utf8');
+const ddl = `
+CREATE TABLE IF NOT EXISTS notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+    title TEXT NOT NULL,
+    message TEXT NOT NULL,
+    type TEXT NOT NULL DEFAULT 'general',
+    read BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
+);
+`;
 
-  const client = new Client({
-    connectionString: connectionString,
-    ssl: { rejectUnauthorized: false }
-  });
-
+async function run() {
   try {
+    console.log("Connecting to Supabase Pooler...");
     await client.connect();
-    console.log('Connected to Supabase PostgreSQL database.');
-    
-    console.log('Executing schema statements...');
-    await client.query(sql);
-    console.log('Migration executed successfully!');
+    console.log("Creating notifications table if not exists...");
+    await client.query(ddl);
+    console.log("Table 'notifications' created successfully!");
   } catch (err) {
-    console.error('Error during migration:', err);
+    console.error("Migration failed:", err);
   } finally {
     await client.end();
   }
 }
 
-main();
+run();

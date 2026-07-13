@@ -309,7 +309,7 @@ export function TelegramConnectCard() {
                   <Input
                     id="tg-phone-local"
                     inputMode="numeric"
-                    placeholder="9322909257"
+                    placeholder="9876543210"
                     value={localPhone}
                     onChange={(e) => setLocalPhone(e.target.value.replace(/[^\d\s]/g, ""))}
                     disabled={!apiReady}
