@@ -85,6 +85,8 @@ export default function NotificationsPage() {
   const [analyzedMsgCount, setAnalyzedMsgCount] = useState<number | undefined>();
   const [applyingInsights, setApplyingInsights] = useState(false);
   const [analyzeLimit, setAnalyzeLimit] = useState(25);
+  const [loadLimit, setLoadLimit] = useState(50);
+  const [loadingFromTelegram, setLoadingFromTelegram] = useState(false);
   const prefsLoaded = useRef(false);
 
   const {
@@ -636,7 +638,52 @@ export default function NotificationsPage() {
                         <span className="text-[10px] font-semibold text-foreground">Monitor</span>
                       </div>
                     </div>
+                    {/* ── Load Messages row ── */}
                     <div className="flex flex-wrap gap-2 items-center">
+                      <div className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-2 py-1">
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">Load</span>
+                        <input
+                          type="number"
+                          min={5}
+                          max={500}
+                          value={loadLimit}
+                          onChange={(e) => setLoadLimit(Math.max(5, Math.min(500, Number(e.target.value))))}
+                          className="w-14 bg-transparent text-xs text-center text-foreground outline-none border-none [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                        />
+                        <span className="text-xs text-muted-foreground whitespace-nowrap">msgs</span>
+                      </div>
+                      <LoadingButton
+                        size="sm"
+                        variant="outline"
+                        loading={loadingFromTelegram}
+                        onClick={async () => {
+                          setLoadingFromTelegram(true);
+                          try {
+                            const res = await fetch("/api/telegram/messages/load", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({
+                                groupId: selectedGroup.groupId,
+                                limit: loadLimit,
+                              }),
+                            });
+                            const data = await res.json();
+                            if (!res.ok) throw new Error(data.error || "Failed to load messages");
+                            toast.success(
+                              data.fetched > 0
+                                ? `Loaded ${data.fetched} message(s) from Telegram`
+                                : "Messages already up to date"
+                            );
+                            await loadMessages(selectedGroup.groupId, false, loadLimit);
+                          } catch (err) {
+                            toast.error(err instanceof Error ? err.message : "Failed to load messages");
+                          } finally {
+                            setLoadingFromTelegram(false);
+                          }
+                        }}
+                      >
+                        <MessageSquare className="h-4 w-4 mr-1" /> Load Messages
+                      </LoadingButton>
                       <LoadingButton
                         size="sm"
                         variant="glow"
@@ -645,13 +692,6 @@ export default function NotificationsPage() {
                       >
                         <Sparkles className="h-4 w-4 mr-1" /> Analyze ({analyzeLimit} msgs)
                       </LoadingButton>
-                      <span className="text-xs text-muted-foreground">
-                        Loads from Telegram, then analyzes. Count in{" "}
-                        <Link href="/dashboard/settings" className="text-primary underline">
-                          Settings
-                        </Link>
-                        .
-                      </span>
                     </div>
                   </div>
                   <ScrollArea className="flex-1 p-4 max-h-[40vh]">
@@ -662,16 +702,10 @@ export default function NotificationsPage() {
                         ))}
                       </div>
                     ) : messages.length === 0 ? (
-                      <div className="text-center text-sm text-muted-foreground py-12 space-y-3">
-                        <p>No messages in database for this chat.</p>
-                        <LoadingButton
-                          variant="glow"
-                          size="sm"
-                          loading={analyzingGroup}
-                          onClick={() => void runInsights(selectedGroup.groupId)}
-                        >
-                          <Sparkles className="h-4 w-4 mr-1" /> Analyze ({analyzeLimit} msgs)
-                        </LoadingButton>
+                      <div className="text-center text-sm text-muted-foreground py-12 space-y-4">
+                        <MessageSquare className="h-8 w-8 mx-auto opacity-30" />
+                        <p>No messages loaded yet.</p>
+                        <p className="text-xs opacity-70">Use <strong className="text-foreground">Load Messages</strong> above to fetch from Telegram, then tap <strong className="text-foreground">Analyze</strong>.</p>
                       </div>
                     ) : (
                       <div className="space-y-3">

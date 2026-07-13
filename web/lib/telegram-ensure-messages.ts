@@ -3,12 +3,14 @@ import { fetchGroupMessagesFromTelegram } from "@/lib/telegram-fetch-history";
 import { bulkStoreTelegramMessages } from "@/lib/telegram-messages";
 
 /**
- * Pull up to `limit` recent messages from Telegram for each group when DB has fewer than needed.
+ * Pull up to `limit` recent messages from Telegram for each group.
+ * @param forceRefresh - if true, always fetches from Telegram even if DB already has enough messages.
  */
 export async function ensureMessagesForGroups(
   groupIds: string[],
   limit: number,
-  since?: Date | null
+  since?: Date | null,
+  forceRefresh = false
 ): Promise<{ fetched: number; perGroup: Record<string, number>; errors: string[] }> {
   const perGroup: Record<string, number> = {};
   const errors: string[] = [];
@@ -27,24 +29,26 @@ export async function ensureMessagesForGroups(
     return { fetched, perGroup, errors };
   }
 
-  const cap = Math.min(100, Math.max(5, limit));
+  const cap = Math.min(500, Math.max(5, limit));
 
   for (const groupId of groupIds) {
     try {
-      let query = supabase
-        .from("telegram_messages")
-        .select("id", { count: "exact", head: true })
-        .eq("group_id", groupId);
+      if (!forceRefresh) {
+        let query = supabase
+          .from("telegram_messages")
+          .select("id", { count: "exact", head: true })
+          .eq("group_id", groupId);
 
-      if (since && !Number.isNaN(since.getTime())) {
-        query = query.gte("sent_at", since.toISOString());
-      }
+        if (since && !Number.isNaN(since.getTime())) {
+          query = query.gte("sent_at", since.toISOString());
+        }
 
-      const { count } = await query;
-      const inDb = count || 0;
-      if (inDb >= cap) {
-        perGroup[groupId] = 0;
-        continue;
+        const { count } = await query;
+        const inDb = count || 0;
+        if (inDb >= cap) {
+          perGroup[groupId] = 0;
+          continue;
+        }
       }
 
       const { data: group } = await supabase
