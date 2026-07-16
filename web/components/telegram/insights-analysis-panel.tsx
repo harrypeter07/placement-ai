@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { Calendar, Check, Sparkles, X, PhoneCall, CheckSquare, Square } from "lucide-react";
+import { Calendar, Check, Sparkles, X, PhoneCall, CheckSquare, Square, ChevronRight } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -286,6 +286,17 @@ function InsightCard({
   onDismiss?: (ids: string[]) => Promise<void>;
 }) {
   const id = insightIdString(ins._id);
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  const cleanTitle = useMemo(() => {
+    if (!ins.title) return "Opportunity details";
+    if (ins.title.startsWith("http")) {
+      return ins.extractedDeadline?.company
+        ? `${ins.extractedDeadline.company} Link Details`
+        : "Opportunity details";
+    }
+    return ins.title;
+  }, [ins.title, ins.extractedDeadline]);
 
   return (
     <motion.div
@@ -295,130 +306,151 @@ function InsightCard({
     >
       <Card
         className={cn(
-          "glass overflow-hidden transition-all duration-300",
-          ins.status === "applied" && "border-green-500/30",
-          variant === "info" && "border-white/10",
+          "glass overflow-hidden transition-all duration-300 border-white/5 hover:border-white/10",
+          ins.status === "applied" && "border-green-500/20 bg-green-500/[0.01]",
           isSelected && "border-primary/50 shadow-[0_0_15px_rgba(99,102,241,0.15)] bg-primary/5"
         )}
       >
-        <CardContent className="p-4 space-y-3">
-          <div className="flex items-start gap-3">
+        {/* Collapsed thin cell row header */}
+        <div
+          className="p-3.5 flex items-center justify-between gap-3 cursor-pointer hover:bg-white/[0.04] transition-colors"
+          onClick={() => setIsExpanded(!isExpanded)}
+        >
+          <div className="flex items-center gap-3 min-w-0 flex-1">
             {variant === "deadline" && ins.status === "draft" && onToggleSelect && (
               <input
                 type="checkbox"
                 checked={isSelected}
-                onChange={onToggleSelect}
-                className="mt-1 h-4.5 w-4.5 rounded border-white/20 bg-white/5 text-primary focus:ring-primary focus:ring-offset-background cursor-pointer"
+                onChange={(e) => {
+                  e.stopPropagation();
+                  onToggleSelect();
+                }}
+                className="h-4.5 w-4.5 rounded border-white/20 bg-white/5 text-primary focus:ring-primary focus:ring-offset-background cursor-pointer"
               />
             )}
-            <div className="flex-1 min-w-0 space-y-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-muted-foreground">#{ins.rank}</span>
-                <h3 className="font-semibold flex-1 min-w-0 text-foreground">{ins.title}</h3>
-                <Badge className={cn("text-[10px]", urgencyClass[ins.urgency] || urgencyClass.medium)}>
-                  {ins.urgency}
-                </Badge>
-                {ins.status === "applied" && (
-                  <Badge variant="success" className="text-[10px]">
-                    <Check className="h-3 w-3 mr-0.5" /> Saved
-                  </Badge>
-                )}
-                {ins.status === "dismissed" && (
-                  <Badge variant="outline" className="text-[10px]">
-                    Dismissed
-                  </Badge>
-                )}
-                {variant === "info" && ins.status === "draft" && (
-                  <Badge variant="outline" className="text-[10px]">
-                    Info
-                  </Badge>
-                )}
-              </div>
-              <p className="text-sm whitespace-pre-wrap text-muted-foreground leading-relaxed">{ins.summary}</p>
-            </div>
-          </div>
+            <span className="text-[10px] font-mono text-muted-foreground shrink-0">#{ins.rank}</span>
+            <h3 className="font-semibold text-sm text-foreground truncate min-w-0 flex-1">{cleanTitle}</h3>
+            
+            <Badge className={cn("text-[9px] py-0.5 shrink-0 uppercase tracking-wider font-semibold", urgencyClass[ins.urgency] || urgencyClass.medium)}>
+              {ins.urgency}
+            </Badge>
 
-          {ins.whyRanked && variant === "deadline" && (
-            <p className="text-xs text-primary/85 bg-primary/5 px-2.5 py-1.5 rounded-md border border-primary/10">
-              <strong>Why:</strong> {ins.whyRanked}
+            {ins.status === "applied" && (
+              <Badge variant="success" className="text-[9px] py-0.5 shrink-0 bg-green-500/20 text-green-300">
+                <Check className="h-2.5 w-2.5 mr-0.5" /> Applied
+              </Badge>
+            )}
+            {ins.status === "dismissed" && (
+              <Badge variant="outline" className="text-[9px] py-0.5 shrink-0">
+                Dismissed
+              </Badge>
+            )}
+            {variant === "info" && ins.status === "draft" && (
+              <Badge variant="outline" className="text-[9px] py-0.5 shrink-0">
+                Info
+              </Badge>
+            )}
+          </div>
+          
+          <div className="text-muted-foreground flex items-center gap-2 shrink-0">
+            {ins.extractedDeadline?.deadline && (
+              <span className="text-[11px] bg-white/5 px-2.5 py-0.5 rounded text-primary-foreground font-semibold">
+                Due: {formatDate(ins.extractedDeadline.deadline)}
+              </span>
+            )}
+            <ChevronRight className={cn("h-4 w-4 transition-transform duration-300 text-muted-foreground/60", isExpanded && "rotate-90 text-foreground")} />
+          </div>
+        </div>
+
+        {/* Expanded Details Body */}
+        {isExpanded && (
+          <div className="px-4 pb-4 pt-1 border-t border-white/5 space-y-4 bg-white/[0.01]">
+            <p className="text-sm whitespace-pre-wrap text-muted-foreground leading-relaxed pt-2">
+              {ins.summary}
             </p>
-          )}
 
-          <div className="flex justify-between items-center text-[10px] text-muted-foreground border-t border-white/5 pt-2">
-            <span>{ins.groupTitle || ins.groupId}</span>
-          </div>
+            {ins.whyRanked && variant === "deadline" && (
+              <p className="text-xs text-primary/85 bg-primary/5 px-2.5 py-1.5 rounded-md border border-primary/10">
+                <strong>Analysis Context:</strong> {ins.whyRanked}
+              </p>
+            )}
 
-          {variant === "deadline" && ins.extractedDeadline?.company && (
-            <div className="rounded-lg bg-primary/10 p-3.5 text-sm space-y-3 border border-primary/20">
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <p className="font-semibold flex items-center gap-2 text-foreground">
-                  <Calendar className="h-4 w-4 text-primary" />
-                  {ins.extractedDeadline.company} — {ins.extractedDeadline.role || "Role"}
-                </p>
-                <span className="text-xs bg-white/5 px-2 py-0.5 rounded text-primary-foreground font-medium">
-                  Due: {formatDate(ins.extractedDeadline.deadline)}
-                </span>
-              </div>
+            <div className="flex justify-between items-center text-[10px] text-muted-foreground">
+              <span>Source Channel: {ins.groupTitle || ins.groupId}</span>
+            </div>
 
-              {ins.status === "draft" && onCallTimeChange && onTogglePhoneCall && (
-                <div className="pt-2.5 border-t border-white/5 flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <PhoneCall className="h-4 w-4 text-emerald-400" />
-                    <span className="text-xs font-medium text-foreground">Twilio Voice Alert</span>
-                    <Switch
-                      checked={enablePhoneCall}
-                      onCheckedChange={onTogglePhoneCall}
-                    />
-                  </div>
-                  {enablePhoneCall && (
+            {variant === "deadline" && ins.extractedDeadline?.company && (
+              <div className="rounded-lg bg-primary/10 p-3.5 text-sm space-y-3 border border-primary/20">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <p className="font-semibold flex items-center gap-2 text-foreground">
+                    <Calendar className="h-4 w-4 text-primary" />
+                    {ins.extractedDeadline.company} — {ins.extractedDeadline.role || "Role"}
+                  </p>
+                  <span className="text-xs bg-white/5 px-2 py-0.5 rounded text-primary-foreground font-medium">
+                    Form Deadline: {formatDate(ins.extractedDeadline.deadline)}
+                  </span>
+                </div>
+
+                {ins.status === "draft" && onCallTimeChange && onTogglePhoneCall && (
+                  <div className="pt-2.5 border-t border-white/5 flex flex-wrap items-center justify-between gap-3">
                     <div className="flex items-center gap-2">
-                      <Label className="text-xs text-muted-foreground">Call at:</Label>
-                      <input
-                        type="time"
-                        value={callTime}
-                        onChange={(e) => onCallTimeChange(e.target.value)}
-                        className="bg-black/40 border border-white/10 rounded px-2 py-0.5 text-xs text-foreground focus:outline-none focus:border-primary w-24 text-center"
+                      <PhoneCall className="h-4 w-4 text-emerald-400" />
+                      <span className="text-xs font-medium text-foreground">Twilio Voice Alert</span>
+                      <Switch
+                        checked={enablePhoneCall}
+                        onCheckedChange={onTogglePhoneCall}
                       />
                     </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
+                    {enablePhoneCall && (
+                      <div className="flex items-center gap-2">
+                        <Label className="text-xs text-muted-foreground">Call at:</Label>
+                        <input
+                          type="time"
+                          value={callTime}
+                          onChange={(e) => onCallTimeChange(e.target.value)}
+                          className="bg-black/40 border border-white/10 rounded px-2 py-0.5 text-xs text-foreground focus:outline-none focus:border-primary w-24 text-center"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
-          {variant === "deadline" && ins.status === "draft" && onSetDeadline && id && (
-            <div className="flex gap-2 pt-1">
-              <LoadingButton
+            {variant === "deadline" && ins.status === "draft" && onSetDeadline && id && (
+              <div className="flex gap-2 pt-1">
+                <LoadingButton
+                  size="sm"
+                  variant="glow"
+                  loading={applying}
+                  className="w-full sm:w-auto"
+                  onClick={onSetDeadline}
+                >
+                  <Calendar className="h-4 w-4 mr-1" /> Set deadline
+                </LoadingButton>
+              </div>
+            )}
+
+            {variant === "info" && ins.status === "draft" && onDismiss && id && (
+              <Button
                 size="sm"
-                variant="glow"
-                loading={applying}
-                className="w-full sm:w-auto"
-                onClick={onSetDeadline}
+                variant="ghost"
+                className="text-muted-foreground hover:text-foreground"
+                disabled={applying}
+                onClick={() => void onDismiss([id])}
               >
-                <Calendar className="h-4 w-4 mr-1" /> Set deadline
-              </LoadingButton>
-            </div>
-          )}
+                <X className="h-4 w-4 mr-1" /> Dismiss
+              </Button>
+            )}
 
-          {variant === "info" && ins.status === "draft" && onDismiss && id && (
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-muted-foreground hover:text-foreground"
-              disabled={applying}
-              onClick={() => void onDismiss([id])}
-            >
-              <X className="h-4 w-4 mr-1" /> Dismiss
-            </Button>
-          )}
-
-          {(ins.reminderCount ?? 0) > 0 && ins.status === "applied" && (
-            <p className="text-xs text-green-400 flex items-center gap-1.5 font-medium">
-              <Check className="h-3.5 w-3.5" />
-              {ins.reminderCount} reminder(s) / call schedules set (view in Call Alerts or Reminders)
-            </p>
-          )}
-        </CardContent>
+            {(ins.reminderCount ?? 0) > 0 && ins.status === "applied" && (
+              <p className="text-xs text-green-400 flex items-center gap-1.5 font-medium">
+                <Check className="h-3.5 w-3.5" />
+                {ins.reminderCount} reminder(s) / call schedules set (view in Call Alerts or Reminders)
+              </p>
+            )}
+          </div>
+        )}
       </Card>
     </motion.div>
   );
