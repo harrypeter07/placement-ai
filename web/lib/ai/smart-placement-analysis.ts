@@ -54,14 +54,21 @@ function parseDeadlineFromText(text: string, sentAt: string): string {
 function guessCompany(text: string): string {
   const named =
     text.match(
-      /\b(TCS|Tata Consultancy|Infosys|Wipro|Amazon|Google|Microsoft|Accenture|Deloitte|Cognizant|Capgemini|IBM|Oracle|Flipkart|Zoho|Paytm|Razorpay|PhonePe|Juspay|Goldman Sachs|JP Morgan|Barclays|Deutsche Bank)\b/i
+      /\b(TCS|Tata Consultancy|Infosys|Wipro|Amazon|Google|Microsoft|Accenture|Deloitte|Cognizant|Capgemini|IBM|Oracle|Flipkart|Zoho|Paytm|Razorpay|PhonePe|Juspay|Goldman Sachs|JP Morgan|Barclays|Deutsche Bank|Adobe|Myntra|Eaton|Stryker|Josh Technology|Salesforce|Varroc|Aspect Ratio|Tata Technologies|Logitech|Eaton|Tally|Nutanix|Stripe)\b/i
     )?.[1];
   if (named) return named.replace(/\s+/g, " ").trim();
 
-  const after = text.match(/(?:company|org|organisation|organization)[:\s]+([A-Za-z0-9\s&.]{2,40})/i)?.[1];
-  if (after) return after.trim();
+  // Heuristic: Check first line for delimiters
+  const firstLine = text.split("\n")[0].trim();
+  const parts = firstLine.split(/\s*[\-|–|:|•|│|#]\s*/);
+  if (parts.length > 1) {
+    const candidate = parts[0].trim();
+    if (/^[A-Z]/.test(candidate) && candidate.length >= 2 && candidate.length <= 40 && !/^(attention|dear|notice|reminder|important|placement|crt|policy|registrations)/i.test(candidate)) {
+      return candidate;
+    }
+  }
 
-  const hiring = text.match(/([A-Z][A-Za-z0-9&.\s]{2,30})\s+(?:is hiring|hiring|placement|drive|intern)/i)?.[1];
+  const hiring = text.match(/\b([A-Z][A-Za-z0-9&.\s]{1,30})\s+(?:is hiring|hiring|placement|drive|intern|hackathon|recruit)\b/)?.[1];
   if (hiring) return hiring.trim();
 
   return "Placement update";
