@@ -27,10 +27,11 @@ export async function syncDeadlineToGoogleCalendar(
   const groupClean = (deadline.telegramGroupId || "").trim();
   const dedupKey = companyClean && dlDateStr && groupClean ? `${companyClean}|${dlDateStr}|${groupClean}` : undefined;
 
-  const map = await getCalendarEventMap(userId, String(deadline._id), dedupKey);
-  if (map && String(map.deadline_id) !== String(deadline._id)) {
+  const deadlineId = String(deadline._id || (deadline as any).id || "");
+  const map = deadlineId && deadlineId !== "undefined" ? await getCalendarEventMap(userId, deadlineId, dedupKey) : null;
+  if (map && deadlineId && deadlineId !== "undefined" && String(map.deadline_id) !== deadlineId) {
     // Found via dedupKey, let's link the new ID
-    await linkDeadlineIdToEventMap(map.id, String(deadline._id));
+    await linkDeadlineIdToEventMap(map.id, deadlineId);
   }
 
   try {
@@ -43,7 +44,7 @@ export async function syncDeadlineToGoogleCalendar(
         userId,
         type: "calendar_sync",
         summary: `Updated Google Calendar event for ${deadline.company} (repost/edit)`,
-        metadata: { deadlineId: String(deadline._id), eventId: map.google_event_id },
+        metadata: { deadlineId, eventId: map.google_event_id },
       });
       return { ok: true as const, action: "updated" as const, eventId: map.google_event_id };
     }
@@ -54,18 +55,18 @@ export async function syncDeadlineToGoogleCalendar(
         userId,
         type: "calendar_error",
         summary: `Calendar not connected — could not create event for ${deadline.company}`,
-        metadata: { deadlineId: String(deadline._id) },
+        metadata: { deadlineId },
       });
       return inserted;
     }
 
-    await createCalendarEventMap(userId, String(deadline._id), inserted.eventId, dedupKey, inserted.etag || undefined);
+    await createCalendarEventMap(userId, deadlineId, inserted.eventId, dedupKey, inserted.etag || undefined);
 
     await createAiAutomationLog({
       userId,
       type: "calendar_sync",
       summary: `Created Google Calendar event for ${deadline.company}`,
-      metadata: { deadlineId: String(deadline._id), eventId: inserted.eventId },
+      metadata: { deadlineId, eventId: inserted.eventId },
     });
     return { ok: true as const, action: "created" as const, eventId: inserted.eventId };
   } catch (e) {

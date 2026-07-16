@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { ensureMessagesForGroups } from "@/lib/telegram-ensure-messages";
 import { analyzeChatMessagesForInsights } from "@/lib/ai/chat-insights";
-import { applySingleInsight } from "@/lib/ai/apply-chat-insights";
+import { applyChatInsightsForUser } from "@/lib/ai/apply-chat-insights";
 
 export const runtime = "nodejs";
 export const maxDuration = 60; // Allow up to 1 minute
@@ -98,26 +98,24 @@ async function handleAutoAnalyze(req: Request) {
 
       // D. Apply insights automatically if enabled
       let appliedCount = 0;
-      if (autoCreateDeadlines && analysis.insights.length > 0) {
-        for (const item of analysis.insights) {
-          // If we have an actionable deadline
-          if (item.extractedDeadline?.company && item.extractedDeadline?.deadline) {
-            try {
-              // Apply the insight
-              const res = await applySingleInsight(userId, item, prefs, {
-                createDeadlines: true,
-                createReminders: true,
-                pinToOverview: tgConfig.insightPinToOverview ?? false,
-                markApplied: true,
-                enablePhoneCall: true,
-              });
-              if (res.deadlineCreated || res.remindersCreated > 0) {
-                appliedCount++;
-              }
-            } catch (err) {
-              console.error("[Auto-Analyze Cron] Error applying insight:", err);
+      if (analysis.insights.length > 0) {
+        try {
+          const res = await applyChatInsightsForUser(
+            userId,
+            analysis.insights,
+            prefs,
+            undefined, // No scope group filter, process all
+            {
+              createDeadlines: autoCreateDeadlines,
+              createReminders: autoCreateDeadlines,
+              pinToOverview: tgConfig.insightPinToOverview ?? false,
+              markApplied: true,
+              enablePhoneCall: true,
             }
-          }
+          );
+          appliedCount = res.deadlines;
+        } catch (err) {
+          console.error("[Auto-Analyze Cron] Error applying bulk insights:", err);
         }
       }
 
