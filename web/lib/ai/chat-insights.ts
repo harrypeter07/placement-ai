@@ -183,7 +183,10 @@ ${transcript.slice(0, 28000)}`;
       lastErr = e;
     }
   }
-  if (!text) throw lastErr;
+  if (!text) {
+    console.warn("[chat-insights] Gemini API failed, falling back to smart rules:", lastErr);
+    return runSmartRulesAnalysis(groups, flatCount);
+  }
 
   try {
     const parsed = JSON.parse(text) as {
