@@ -47,10 +47,28 @@ export async function extractPlacementFromText(text: string): Promise<ExtractedP
 
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-    const result = await model.generateContent(EXTRACTION_PROMPT + text);
-    const response = result.response.text();
-    const cleaned = response.replace(/```json\n?|\n?```/g, "").trim();
+    const models = [
+      "gemini-1.5-flash",
+      "gemini-1.5-flash-latest",
+      "gemini-1.5-flash-8b",
+      "gemini-2.0-flash",
+      "gemini-2.5-flash",
+      "gemini-1.5-pro"
+    ];
+    let responseText = "";
+    let lastErr: unknown;
+    for (const modelName of models) {
+      try {
+        const model = genAI.getGenerativeModel({ model: modelName });
+        const result = await model.generateContent(EXTRACTION_PROMPT + text);
+        responseText = result.response.text();
+        break;
+      } catch (err) {
+        lastErr = err;
+      }
+    }
+    if (!responseText) throw lastErr;
+    const cleaned = responseText.replace(/```json\n?|\n?```/g, "").trim();
     const parsed = JSON.parse(cleaned) as ExtractedPlacement;
     return { ...fallback, ...parsed };
   } catch {

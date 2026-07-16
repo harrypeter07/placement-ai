@@ -95,11 +95,11 @@ export async function fetchGroupMessagesFromTelegram(
       if (msg.document) {
         try {
           const doc = msg.document;
-          const fileName = (doc as any).fileName || "";
+          const fileName = (doc as unknown as Record<string, unknown>).fileName as string || "";
           const isPdf = fileName.toLowerCase().endsWith(".pdf");
           const isTxt = fileName.toLowerCase().endsWith(".txt");
 
-          if ((isPdf || isTxt) && doc.size < 2 * 1024 * 1024) {
+          if ((isPdf || isTxt) && Number(doc.size) < 2 * 1024 * 1024) {
             const buf = await client.downloadMedia(msg, {});
             if (buf && buf instanceof Buffer) {
               let extractedText = "";
