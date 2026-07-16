@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+
 import { getStudentPreferences, createFormJob, snoozeReminder } from "@/lib/db-supabase";
 import { supabase } from "@/lib/supabase";
 import { runFormJobFilling } from "@/lib/forms/executor";
@@ -55,6 +55,17 @@ export async function POST(req: Request) {
     let xml = "";
 
     if (option === "1") {
+      if (reminderId) {
+        await supabase
+          .from("reminders")
+          .update({
+            call_status: "called",
+            call_response: "Key 1 pressed (Fill Form triggered)",
+            called_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", reminderId);
+      }
       if (!formUrl) {
         xml = `
           <Response>
@@ -109,12 +120,35 @@ export async function POST(req: Request) {
       const snoozeMinutes = voiceSettings.defaultSnoozeMinutes || 60;
       await snoozeReminder(reminderId, snoozeMinutes);
       
+      if (reminderId) {
+        await supabase
+          .from("reminders")
+          .update({
+            call_status: "called",
+            call_response: `Key 2 pressed (Snoozed for ${snoozeMinutes}m)`,
+            called_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", reminderId);
+      }
+      
       xml = `
         <Response>
           <Say voice="${voice}" language="${language}">Alert snoozed for ${snoozeMinutes} minutes. I will call you again once the timer expires. Goodbye.</Say>
         </Response>
       `;
     } else if (option === "3") {
+      if (reminderId) {
+        await supabase
+          .from("reminders")
+          .update({
+            call_status: "called",
+            call_response: "Key 3 pressed (Repeat message)",
+            called_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", reminderId);
+      }
       // Fetch reminder to replay details
       const { data: reminder } = await supabase
         .from("reminders")
@@ -123,7 +157,7 @@ export async function POST(req: Request) {
         .single();
       
       const deadline = reminder?.deadlines;
-      let announcement = "This is a placement alert from PlaceMint.";
+      let announcement = (voiceSettings as Record<string, unknown>).welcomeMessage as string || "This is a placement alert from PlaceMint.";
       if (deadline) {
         const formattedDate = new Date(deadline.deadline_date).toLocaleDateString("en-IN", {
           weekday: "long",
@@ -160,6 +194,17 @@ export async function POST(req: Request) {
         </Response>
       `;
     } else {
+      if (reminderId) {
+        await supabase
+          .from("reminders")
+          .update({
+            call_status: "called",
+            call_response: option ? `Key ${option} pressed (Invalid option)` : "No key pressed (Timeout)",
+            called_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq("id", reminderId);
+      }
       // Invalid input fallback
       xml = `
         <Response>
@@ -174,7 +219,7 @@ export async function POST(req: Request) {
       },
     });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "Error";
+    console.error("[Twilio Callback] Error:", e);
     const fallbackXml = `<Response><Say voice="Polly.Kajal-Neural" language="en-IN">An internal error occurred. Goodbye.</Say></Response>`;
     return new Response(fallbackXml, {
       headers: { "Content-Type": "application/xml" },

@@ -26,16 +26,34 @@ export async function GET(req: Request) {
   }
 
   try {
-    const res = await fetch(`${workerUrl}/health`, {
-      cache: "no-store",
-      signal: AbortSignal.timeout(25_000),
-    });
-    const body = await res.json().catch(() => ({}));
+    // 1. Keep render worker warm
+    try {
+      await fetch(`${workerUrl}/health`, {
+        cache: "no-store",
+        signal: AbortSignal.timeout(10_000),
+      }).catch(() => undefined);
+    } catch {}
+
+    // 2. Trigger auto-analyze groups in background
+    let autoAnalyzeResult = null;
+    try {
+      const autoAnalyzeBase = `${process.env.WEB_APP_URL || "https://placemint-web.vercel.app"}/api/cron/auto-analyze`;
+      const res = await fetch(autoAnalyzeBase, {
+        method: "POST",
+        headers: {
+          "x-worker-secret": cronSecret || "",
+        },
+        signal: AbortSignal.timeout(20_000),
+      });
+      autoAnalyzeResult = await res.json().catch(() => ({}));
+    } catch (e: unknown) {
+      autoAnalyzeResult = { error: e instanceof Error ? e.message : String(e) };
+    }
+
     return NextResponse.json({
-      ok: res.ok,
-      status: res.status,
-      worker: body,
+      ok: true,
       pingedAt: new Date().toISOString(),
+      autoAnalyze: autoAnalyzeResult,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Ping failed";

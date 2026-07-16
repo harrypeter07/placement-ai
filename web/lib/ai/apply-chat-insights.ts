@@ -157,6 +157,10 @@ export async function applySingleInsight(
           confidence: "confidence" in item ? item.confidence : 0.7,
           is_global: false,
           notes: `From Telegram insight: ${title}`,
+          source_message_id: Array.isArray(item.source_message_ids) && item.source_message_ids.length > 0
+            ? item.source_message_ids[0]
+            : item.telegram_message_id || null,
+          telegram_group_id: item.group_id || null,
           updated_at: new Date().toISOString()
         };
 
@@ -265,7 +269,9 @@ export async function applySingleInsight(
       if (opts.enablePhoneCall !== false) {
         const defaultTime = prefs?.twilio_voice_settings?.defaultCallTime || "09:00";
         const callTimeStr = opts.callTime || defaultTime;
-        const datePart = new Date(deadline.deadline_date).toISOString().slice(0, 10);
+        const offsetDays = prefs?.twilio_voice_settings?.defaultCallOffsetDays || 0;
+        const baseDate = new Date(new Date(deadline.deadline_date).getTime() - offsetDays * 24 * 60 * 60 * 1000);
+        const datePart = baseDate.toISOString().slice(0, 10);
         const scheduledCallAt = new Date(`${datePart}T${callTimeStr}:00+05:30`);
 
         if (scheduledCallAt > new Date()) {

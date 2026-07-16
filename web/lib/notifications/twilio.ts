@@ -92,7 +92,8 @@ export async function makeReminderPhoneCall(
     minute: "2-digit",
   });
 
-  const announcement = `Hello! This is a placement alert from PlaceMint A.I. Your deadline for the company ${company}, role ${role}, is approaching on ${formattedDate}.`;
+  const welcome = (voiceSettings as Record<string, unknown>).welcomeMessage as string || "Hello! This is a placement alert from PlaceMint A.I.";
+  const announcement = `${welcome} Your deadline for the company ${company}, role ${role}, is approaching on ${formattedDate}.`;
 
   // Build TwiML block
   let twiml = "";

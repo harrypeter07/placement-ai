@@ -60,6 +60,8 @@ type Prefs = {
     voice: string;
     language: string;
     defaultCallTime?: string;
+    welcomeMessage?: string;
+    defaultCallOffsetDays?: number;
   };
 };
 
@@ -414,6 +416,24 @@ export default function CallAlertsPage() {
                         </p>
                       </fieldset>
                       <fieldset className="space-y-2 border-0 p-0">
+                        <Label>Call Offset (Days before deadline)</Label>
+                        <Input
+                          type="number"
+                          min={0}
+                          max={30}
+                          value={prefs.twilioVoiceSettings?.defaultCallOffsetDays ?? 0}
+                          onChange={(e) =>
+                            updateSettingField(
+                              ["twilioVoiceSettings", "defaultCallOffsetDays"],
+                              parseInt(e.target.value) || 0
+                            )
+                          }
+                        />
+                        <p className="text-[10px] text-muted-foreground">
+                          How many days before the deadline the call alert should ring (0 = same day).
+                        </p>
+                      </fieldset>
+                      <fieldset className="space-y-2 border-0 p-0">
                         <Label>Voice Actor (Polly)</Label>
                         <Select
                           value={prefs.twilioVoiceSettings?.voice || "Polly.Kajal-Neural"}
@@ -430,6 +450,22 @@ export default function CallAlertsPage() {
                             <SelectItem value="Polly.Joanna-Neural">Joanna (Neural, US)</SelectItem>
                           </SelectContent>
                         </Select>
+                      </fieldset>
+                      <fieldset className="space-y-2 border-0 p-0">
+                        <Label>Custom Welcome Message</Label>
+                        <Input
+                          value={prefs.twilioVoiceSettings?.welcomeMessage ?? ""}
+                          onChange={(e) =>
+                            updateSettingField(
+                              ["twilioVoiceSettings", "welcomeMessage"],
+                              e.target.value
+                            )
+                          }
+                          placeholder="e.g. Welcome to PlaceMint by Hassan."
+                        />
+                        <p className="text-[10px] text-muted-foreground">
+                          Custom greeting played at the beginning of the call.
+                        </p>
                       </fieldset>
                       <div className="flex items-center justify-between pt-2">
                         <Label className="text-xs">TwiML Interactive Menu</Label>

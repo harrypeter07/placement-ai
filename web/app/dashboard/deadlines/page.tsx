@@ -43,6 +43,7 @@ interface Deadline {
   eligibility: string;
   links: string[];
   notes?: string;
+  sourceMessageText?: string;
 }
 
 interface PopulatedDeadline {
@@ -332,6 +333,12 @@ function PlacementsContent() {
                           <p className="text-xs text-muted-foreground mt-1">
                             Due {formatDate(d.deadline)}
                           </p>
+                          {d.sourceMessageText && (
+                            <div className="mt-2 text-[11px] text-muted-foreground bg-black/10 p-2.5 rounded-lg border border-white/5 whitespace-pre-wrap max-h-24 overflow-y-auto">
+                              <strong className="text-foreground">Source Message:</strong>
+                              <p className="mt-1 font-mono opacity-85 leading-relaxed">{d.sourceMessageText}</p>
+                            </div>
+                          )}
                         </div>
                         <div className="flex items-center gap-2 flex-wrap">
                           <Select

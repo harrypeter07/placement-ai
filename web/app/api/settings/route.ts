@@ -99,6 +99,9 @@ const patchSchema = z
         defaultSnoozeMinutes: z.number().optional(),
         voice: z.string().optional(),
         language: z.string().optional(),
+        defaultCallTime: z.string().optional(),
+        welcomeMessage: z.string().optional(),
+        defaultCallOffsetDays: z.number().optional(),
       })
       .optional(),
   })

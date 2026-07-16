@@ -203,7 +203,9 @@ export async function POST(req: Request) {
     if (hasPhoneCall) {
       const defaultTime = prefs?.twilio_voice_settings?.defaultCallTime || "09:00";
       const callTimeStr = parsed.data.callTime || defaultTime;
-      const datePart = new Date(deadline.deadline_date).toISOString().slice(0, 10);
+      const offsetDays = prefs?.twilio_voice_settings?.defaultCallOffsetDays || 0;
+      const baseDate = new Date(new Date(deadline.deadline_date).getTime() - offsetDays * 24 * 60 * 60 * 1000);
+      const datePart = baseDate.toISOString().slice(0, 10);
       const scheduledCallAt = new Date(`${datePart}T${callTimeStr}:00+05:30`);
 
       if (scheduledCallAt > new Date()) {

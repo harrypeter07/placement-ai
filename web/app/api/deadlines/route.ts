@@ -38,6 +38,20 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Database error" }, { status: 500 });
     }
 
+    const messageIds = (deadlines || []).map((d) => d.source_message_id).filter(Boolean);
+    const messageMap: Record<string, string> = {};
+    if (messageIds.length > 0) {
+      const { data: messages } = await supabase
+        .from("telegram_messages")
+        .select("message_id, text")
+        .in("message_id", messageIds);
+      if (messages) {
+        messages.forEach((m) => {
+          messageMap[m.message_id] = m.text;
+        });
+      }
+    }
+
     const mapped = (deadlines || []).map((d) => ({
       _id: d.id,
       id: d.id,
@@ -53,6 +67,9 @@ export async function GET(req: Request) {
       notes: d.notes,
       confidence: d.confidence,
       isGlobal: d.is_global,
+      sourceMessageId: d.source_message_id,
+      telegramGroupId: d.telegram_group_id,
+      sourceMessageText: d.source_message_id ? messageMap[d.source_message_id] || "" : "",
       createdAt: d.created_at,
       updatedAt: d.updated_at,
     }));
