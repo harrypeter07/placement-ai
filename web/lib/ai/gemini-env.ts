@@ -28,6 +28,10 @@ export async function getGeminiApiKey(userId?: string): Promise<string | null> {
     console.error("[gemini-env] Failed to query Supabase for API key:", err);
   }
 
+  if (process.env.GEMINI_API_KEY) {
+    const val = process.env.GEMINI_API_KEY.trim();
+    if (val) return val;
+  }
   return null;
 }
 
