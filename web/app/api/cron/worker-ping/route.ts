@@ -37,7 +37,9 @@ export async function GET(req: Request) {
     // 2. Trigger auto-analyze groups in background
     let autoAnalyzeResult = null;
     try {
-      const autoAnalyzeBase = `${process.env.WEB_APP_URL || "https://placemint-web.vercel.app"}/api/cron/auto-analyze`;
+      const host = req.headers.get("host") || "plarm.vercel.app";
+      const protocol = host.includes("localhost") || host.includes("127.0.0.1") ? "http" : "https";
+      const autoAnalyzeBase = `${protocol}://${host}/api/cron/auto-analyze`;
       const res = await fetch(autoAnalyzeBase, {
         method: "POST",
         headers: {

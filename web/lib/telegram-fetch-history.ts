@@ -1,5 +1,6 @@
 import { Api } from "telegram";
 import { createTelegramClient } from "@/lib/telegram-gramjs";
+import { parsePdfText } from "@/lib/pdf-parser";
 
 export type FetchedTelegramMessage = {
   messageId: string;
@@ -89,6 +90,52 @@ export async function fetchGroupMessagesFromTelegram(
       } catch {
         /* sender optional */
       }
+
+      // 1. Download & parse document attachment if PDF or TXT
+      if (msg.document) {
+        try {
+          const doc = msg.document;
+          const fileName = (doc as any).fileName || "";
+          const isPdf = fileName.toLowerCase().endsWith(".pdf");
+          const isTxt = fileName.toLowerCase().endsWith(".txt");
+
+          if ((isPdf || isTxt) && doc.size < 2 * 1024 * 1024) {
+            const buf = await client.downloadMedia(msg, {});
+            if (buf && buf instanceof Buffer) {
+              let extractedText = "";
+              if (isPdf) {
+                extractedText = parsePdfText(buf);
+              } else if (isTxt) {
+                extractedText = buf.toString("utf-8");
+              }
+              if (extractedText.trim()) {
+                row.text += `\n\n[Document Content (${fileName}):\n${extractedText.trim()}\n]`;
+              }
+            }
+          }
+        } catch (docErr) {
+          console.error(`[fetchGroupMessages] Failed to download/parse document:`, docErr);
+        }
+      }
+
+      // 2. Fetch Google Docs links text contents if present
+      const gdocMatch = row.text.match(/docs\.google\.com\/document\/d\/([a-zA-Z0-9_-]+)/);
+      if (gdocMatch) {
+        try {
+          const docId = gdocMatch[1];
+          const txtUrl = `https://docs.google.com/document/d/${docId}/export?format=txt`;
+          const res = await fetch(txtUrl);
+          if (res.ok) {
+            const docText = await res.text();
+            if (docText.trim()) {
+              row.text += `\n\n[Google Doc Contents:\n${docText.trim()}\n]`;
+            }
+          }
+        } catch (gdocErr) {
+          console.error("[fetchGroupMessages] Failed to fetch Google Doc text:", gdocErr);
+        }
+      }
+
       rows.push(row);
     }
 

@@ -1,10 +1,10 @@
 import type { ChatInsightItem, ChatMessageInput } from "@/lib/ai/chat-insights";
 
 const PLACEMENT_RE =
-  /\b(placement|intern|internship|hiring|apply|deadline|oa\b|online assessment|interview|register|registration|form|closing|eligibility|cgpa|package|lpa|ctc|tcs|infosys|wipro|amazon|google|microsoft|drive|shortlist|pool|campus)\b/i;
+  /\b(placement|intern|hiring|apply|applying|deadline|oa\b|online assessment|interview|register|registration|form|closing|eligibility|cgpa|package|lpa|ctc|tcs|infosys|wipro|amazon|google|microsoft|drive|shortlist|pool|campus)/i;
 
 const URGENT_RE =
-  /\b(today|tonight|eod|asap|urgent|last date|closing soon|11:59|23:59|form closure|last chance)\b/i;
+  /\b(today|tonight|eod|asap|urgent|last date|closing soon|11:59|23:59|form closure|last chance)/i;
 
 function parseDeadlineFromText(text: string, sentAt: string): string {
   const now = new Date(sentAt || Date.now());
@@ -18,10 +18,10 @@ function parseDeadlineFromText(text: string, sentAt: string): string {
     if (!Number.isNaN(dt.getTime())) return dt.toISOString();
   }
 
-  const dayMonth = text.match(/\b(\d{1,2})(?:st|nd|rd|th)?\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b/i);
+  const dayMonth = text.match(/\b(\d{1,2})(?:st|nd|rd|th)?\s*(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\b/i);
   if (dayMonth) {
     const months: Record<string, number> = {
-      jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5,
+      jan: 0, feb: 1, max: 2, mar: 2, apr: 3, may: 4, jun: 5,
       jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11,
     };
     const mo = months[dayMonth[2].slice(0, 3).toLowerCase()];
@@ -31,11 +31,11 @@ function parseDeadlineFromText(text: string, sentAt: string): string {
     }
   }
 
-  const timeDay = text.match(/(\d{1,2}):(\d{2})\s*(am|pm)?\s*(\d{1,2})?/i);
-  if (timeDay && URGENT_RE.test(text)) {
+  const timeDay = text.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*(\d{1,2})?/i);
+  if (timeDay && (timeDay[2] || timeDay[3]) && URGENT_RE.test(text)) {
     const day = timeDay[4] ? Number(timeDay[4]) : now.getDate();
     let hour = Number(timeDay[1]);
-    const min = Number(timeDay[2]);
+    const min = timeDay[2] ? Number(timeDay[2]) : 0;
     const ap = (timeDay[3] || "").toLowerCase();
     if (ap === "pm" && hour < 12) hour += 12;
     if (ap === "am" && hour === 12) hour = 0;
