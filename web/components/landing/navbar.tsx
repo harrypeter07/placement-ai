@@ -8,8 +8,11 @@ import { Button } from "@/components/ui/button";
 import { siteConfig } from "@/config/site";
 import { ThemeToggle } from "@/components/theme-toggle";
 
+import { useSession } from "next-auth/react";
+
 export function Navbar() {
   const [open, setOpen] = useState(false);
+  const { status } = useSession();
 
   return (
     <motion.header
@@ -26,7 +29,7 @@ export function Navbar() {
             Place<span className="text-gradient">Mint</span> AI
           </span>
         </Link>
-
+ 
         <div className="hidden items-center gap-8 md:flex">
           {siteConfig.nav.main.map((item) => (
             <Link
@@ -38,17 +41,25 @@ export function Navbar() {
             </Link>
           ))}
         </div>
-
+ 
         <div className="hidden items-center gap-3 md:flex">
           <ThemeToggle />
-          <Button variant="ghost" asChild>
-            <Link href="/login">Sign in</Link>
-          </Button>
-          <Button variant="glow" asChild>
-            <Link href="/register">Get Started</Link>
-          </Button>
+          {status === "authenticated" ? (
+            <Button variant="glow" asChild>
+              <Link href="/dashboard">Dashboard</Link>
+            </Button>
+          ) : (
+            <>
+              <Button variant="ghost" asChild>
+                <Link href="/login">Sign in</Link>
+              </Button>
+              <Button variant="glow" asChild>
+                <Link href="/register">Get Started</Link>
+              </Button>
+            </>
+          )}
         </div>
-
+ 
         <div className="flex items-center gap-2 md:hidden">
           <ThemeToggle />
           <Button variant="ghost" size="icon" onClick={() => setOpen(!open)}>
@@ -56,7 +67,7 @@ export function Navbar() {
           </Button>
         </div>
       </nav>
-
+ 
       <AnimatePresence>
         {open && (
           <motion.div
@@ -71,9 +82,20 @@ export function Navbar() {
                   {item.title}
                 </Link>
               ))}
-              <Button variant="glow" asChild>
-                <Link href="/register">Get Started</Link>
-              </Button>
+              {status === "authenticated" ? (
+                <Button variant="glow" asChild>
+                  <Link href="/dashboard" onClick={() => setOpen(false)}>Dashboard</Link>
+                </Button>
+              ) : (
+                <>
+                  <Button variant="ghost" asChild>
+                    <Link href="/login" onClick={() => setOpen(false)}>Sign in</Link>
+                  </Button>
+                  <Button variant="glow" asChild>
+                    <Link href="/register" onClick={() => setOpen(false)}>Get Started</Link>
+                  </Button>
+                </>
+              )}
             </div>
           </motion.div>
         )}

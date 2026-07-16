@@ -143,14 +143,21 @@ export function FAQSection() {
   );
 }
 
+import { useSession } from "next-auth/react";
+
 export function CTASection() {
+  const { status } = useSession();
   return (
     <section className="py-24">
       <motion.div className="mx-auto max-w-4xl px-4 text-center glass-strong rounded-2xl p-12 glow-border">
         <h2 className="text-3xl font-bold">Ready to never miss a drive?</h2>
         <p className="mt-4 text-muted-foreground">Join thousands of students using PlaceMint AI.</p>
         <Button variant="glow" size="lg" className="mt-8" asChild>
-          <Link href="/register">Get Started Free</Link>
+          {status === "authenticated" ? (
+            <Link href="/dashboard">Go to Dashboard</Link>
+          ) : (
+            <Link href="/register">Get Started Free</Link>
+          )}
         </Button>
       </motion.div>
     </section>
@@ -158,13 +165,20 @@ export function CTASection() {
 }
 
 export function Footer() {
+  const { status } = useSession();
   return (
     <footer className="border-t border-white/5 py-12">
       <motion.div className="mx-auto max-w-7xl px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
         <p className="text-sm text-muted-foreground">© 2026 PlaceMint AI. All rights reserved.</p>
         <motion.div className="flex gap-6 text-sm text-muted-foreground">
-          <Link href="/login">Login</Link>
-          <Link href="/register">Register</Link>
+          {status === "authenticated" ? (
+            <Link href="/dashboard">Dashboard</Link>
+          ) : (
+            <>
+              <Link href="/login">Login</Link>
+              <Link href="/register">Register</Link>
+            </>
+          )}
         </motion.div>
       </motion.div>
     </footer>

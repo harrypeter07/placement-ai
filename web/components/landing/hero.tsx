@@ -5,7 +5,11 @@ import { motion } from "framer-motion";
 import { ArrowRight, Play, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
+import { useSession } from "next-auth/react";
+
 export function Hero() {
+  const { status } = useSession();
+
   return (
     <section className="relative min-h-screen overflow-hidden pt-24">
       <motion.div className="absolute inset-0 bg-gradient-to-b from-primary/10 via-transparent to-transparent" />
@@ -49,9 +53,15 @@ export function Hero() {
             className="mt-10 flex flex-wrap items-center justify-center gap-4"
           >
             <Button variant="glow" size="lg" asChild className="glow-border">
-              <Link href="/register">
-                Start Free <ArrowRight className="ml-2 h-4 w-4" />
-              </Link>
+              {status === "authenticated" ? (
+                <Link href="/dashboard">
+                  Go to Dashboard <ArrowRight className="ml-2 h-4 w-4" />
+                </Link>
+              ) : (
+                <Link href="/register">
+                  Start Free <ArrowRight className="ml-2 h-4 w-4" />
+                </Link>
+              )}
             </Button>
             <Button variant="outline" size="lg" asChild>
               <Link href="#workflow">
