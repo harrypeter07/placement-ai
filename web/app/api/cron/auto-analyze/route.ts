@@ -48,7 +48,7 @@ async function handleAutoAnalyze(req: Request) {
       if (monitored.length === 0 || !autoInsights) continue;
 
       const userId = prefs.user_id;
-      const limit = tgConfig.insightMessageCount || 25;
+      const limit = Math.max(50, tgConfig.insightMessageCount || 25);
 
       console.log(`[Auto-Analyze Cron] Processing user ${userId} for groups:`, monitored);
 
