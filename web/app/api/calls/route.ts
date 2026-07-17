@@ -65,7 +65,7 @@ export async function PATCH(req: Request) {
   try {
     const user = await requireAuth();
     const body = await req.json();
-    const { id, callStatus, callResponse, formFillStatus } = body;
+    const { id, callStatus, callResponse, formFillStatus, scheduledAt, rescheduleOffsetHours } = body;
 
     if (!id) {
       return NextResponse.json({ error: "Missing reminder ID" }, { status: 400 });
@@ -75,6 +75,22 @@ export async function PATCH(req: Request) {
     if (callStatus !== undefined) updatePayload.call_status = callStatus;
     if (callResponse !== undefined) updatePayload.call_response = callResponse;
     if (formFillStatus !== undefined) updatePayload.form_fill_status = formFillStatus;
+
+    if (scheduledAt !== undefined) {
+      updatePayload.scheduled_at = scheduledAt;
+      updatePayload.sent = false;
+      updatePayload.status = "active";
+      updatePayload.call_status = "pending";
+      updatePayload.call_response = null;
+    } else if (rescheduleOffsetHours !== undefined) {
+      const newTime = new Date(Date.now() + Number(rescheduleOffsetHours) * 60 * 60 * 1000).toISOString();
+      updatePayload.scheduled_at = newTime;
+      updatePayload.sent = false;
+      updatePayload.status = "active";
+      updatePayload.call_status = "pending";
+      updatePayload.call_response = null;
+    }
+
     updatePayload.updated_at = new Date().toISOString();
 
     const { data: updated, error } = await supabase
@@ -97,6 +113,7 @@ export async function PATCH(req: Request) {
         callStatus: updated.call_status,
         callResponse: updated.call_response,
         formFillStatus: updated.form_fill_status,
+        scheduledAt: updated.scheduled_at,
       },
     });
   } catch (e) {

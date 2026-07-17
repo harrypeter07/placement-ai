@@ -185,81 +185,97 @@ export function ReminderHub() {
                 </CardContent>
               </Card>
             ) : (
-              grouped.map(([group, items]) => (
-                <Card key={group} className="glass overflow-hidden">
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-base">{group}</CardTitle>
-                    <CardDescription>Timeline — soonest first</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-2 p-0 pb-2">
-                    <AnimatePresence>
-                      {items
-                        .sort((a, b) => msUntil(a.scheduledAt) - msUntil(b.scheduledAt))
-                        .map((r, i) => {
-                          const dl = typeof r.deadlineId === "object" ? r.deadlineId : null;
-                          const level = r.escalationLevel || "normal";
-                          return (
-                            <motion.div
-                              key={r._id}
-                              initial={{ opacity: 0, x: -8 }}
-                              animate={{ opacity: 1, x: 0 }}
-                              transition={{ delay: i * 0.03 }}
-                              className="flex gap-3 px-4 py-3 border-t border-white/5 items-start"
-                            >
-                              <div className="w-1 rounded-full bg-primary/40 self-stretch min-h-[48px]" />
-                              <div className="flex-1 min-w-0">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <p className="font-medium text-sm truncate">{r.title || "Reminder"}</p>
-                                  <Badge className={cn("text-[10px]", levelColors[level])}>{level}</Badge>
-                                  {r.aiSuggested && (
-                                    <Badge variant="outline" className="text-[10px]">
-                                      AI
-                                    </Badge>
+              grouped.map(([group, items]) => {
+                const firstDl = typeof items[0]?.deadlineId === "object" ? items[0].deadlineId : null;
+                const deadlineDateStr = firstDl?.deadline ? formatDate(firstDl.deadline) : null;
+
+                return (
+                  <Card key={group} className="glass overflow-hidden border-white/5">
+                    <CardHeader className="pb-2 flex flex-row items-center justify-between flex-wrap gap-2">
+                      <div>
+                        <CardTitle className="text-base">{group}</CardTitle>
+                        {deadlineDateStr && (
+                          <CardDescription className="text-xs text-primary mt-0.5">
+                            Due date: {deadlineDateStr}
+                          </CardDescription>
+                        )}
+                      </div>
+                    </CardHeader>
+                    
+                    <CardContent className="p-4 pt-1 space-y-4">
+                      {/* Message preview shown only once */}
+                      <div className="space-y-1.5 bg-white/[0.01] p-3 rounded-lg border border-white/5">
+                        <div className="flex items-center gap-2">
+                          <Badge className={cn("text-[9px] uppercase font-semibold", levelColors[items[0]?.escalationLevel || "normal"])}>
+                            {items[0]?.escalationLevel || "normal"}
+                          </Badge>
+                          {items.some(x => x.aiSuggested) && (
+                            <Badge variant="outline" className="text-[9px]">AI</Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap font-mono">
+                          {items[0]?.aiSummary || items[0]?.message}
+                        </p>
+                      </div>
+
+                      {/* Scheduled Call Alarms grid list */}
+                      <div className="space-y-2.5">
+                        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Scheduled Call Alarms</p>
+                        <div className="grid sm:grid-cols-2 gap-2">
+                          {items
+                            .sort((a, b) => msUntil(a.scheduledAt) - msUntil(b.scheduledAt))
+                            .map((r) => {
+                              const date = new Date(r.scheduledAt);
+                              const dayName = date.toLocaleDateString("en-IN", { weekday: 'short' }); // e.g. Mon
+                              const dateStr = date.toLocaleDateString("en-IN", { day: 'numeric', month: 'short' }); // e.g. 17 Jul
+                              const timeStr = date.toLocaleTimeString("en-IN", { hour: '2-digit', minute: '2-digit', hour12: false }); // e.g. 09:00
+
+                              return (
+                                <div
+                                  key={r._id}
+                                  className={cn(
+                                    "flex items-center justify-between gap-3 px-3 py-2 rounded-lg border text-xs transition-all duration-200",
+                                    r.enabled
+                                      ? "bg-primary/[0.03] border-primary/20 hover:border-primary/30 text-foreground"
+                                      : "bg-white/[0.01] border-white/5 opacity-40 line-through text-muted-foreground"
                                   )}
+                                >
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <Clock className={cn("h-3.5 w-3.5 shrink-0", r.enabled ? "text-primary" : "text-muted-foreground")} />
+                                    <span className="font-medium font-mono truncate">
+                                      {dayName}, {dateStr} @ {timeStr}
+                                    </span>
+                                  </div>
+
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    <Switch
+                                      checked={r.enabled}
+                                      onCheckedChange={(on) =>
+                                        void patchReminder(r._id, on ? { action: "resume" } : { action: "pause" })
+                                      }
+                                      className="scale-75"
+                                    />
+                                    {r.status === "active" && (
+                                      <Button
+                                        size="icon"
+                                        variant="ghost"
+                                        className="h-6 w-6 text-muted-foreground hover:text-green-400 hover:bg-green-500/10 rounded-full transition-colors"
+                                        title="Complete Alert"
+                                        onClick={() => void patchReminder(r._id, { action: "complete" })}
+                                      >
+                                        <Check className="h-3.5 w-3.5" />
+                                      </Button>
+                                    )}
+                                  </div>
                                 </div>
-                                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">
-                                  {r.aiSummary || r.message}
-                                </p>
-                                <p className="text-xs text-primary mt-1 font-mono">
-                                  {countdown(r.scheduledAt)} · {formatDate(r.scheduledAt)}
-                                  {dl?.deadline ? ` · deadline ${formatDate(dl.deadline)}` : ""}
-                                </p>
-                              </div>
-                              <div className="flex flex-col gap-1 shrink-0">
-                                <Switch
-                                  checked={r.enabled}
-                                  onCheckedChange={(on) =>
-                                    void patchReminder(r._id, on ? { action: "resume" } : { action: "pause" })
-                                  }
-                                />
-                                <div className="flex gap-1">
-                                  <Button
-                                    size="icon"
-                                    variant="ghost"
-                                    className="h-8 w-8"
-                                    title="Snooze 1h"
-                                    onClick={() => void patchReminder(r._id, { action: "snooze", snoozeMinutes: 60 })}
-                                  >
-                                    <Pause className="h-3.5 w-3.5" />
-                                  </Button>
-                                  <Button
-                                    size="icon"
-                                    variant="ghost"
-                                    className="h-8 w-8"
-                                    title="Complete"
-                                    onClick={() => void patchReminder(r._id, { action: "complete" })}
-                                  >
-                                    <Check className="h-3.5 w-3.5" />
-                                  </Button>
-                                </div>
-                              </div>
-                            </motion.div>
-                          );
-                        })}
-                    </AnimatePresence>
-                  </CardContent>
-                </Card>
-              ))
+                              );
+                            })}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })
             )}
           </TabsContent>
         </Tabs>

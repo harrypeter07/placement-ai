@@ -52,10 +52,29 @@ export async function GET(req: Request) {
       autoAnalyzeResult = { error: e instanceof Error ? e.message : String(e) };
     }
 
+    // 3. Trigger process-due reminders in background
+    let processDueResult = null;
+    try {
+      const host = req.headers.get("host") || "plarm.vercel.app";
+      const protocol = host.includes("localhost") || host.includes("127.0.0.1") ? "http" : "https";
+      const processDueUrl = `${protocol}://${host}/api/reminders/process-due`;
+      const res = await fetch(processDueUrl, {
+        method: "POST",
+        headers: {
+          "x-worker-secret": cronSecret || "",
+        },
+        signal: AbortSignal.timeout(20_000),
+      });
+      processDueResult = await res.json().catch(() => ({}));
+    } catch (e: unknown) {
+      processDueResult = { error: e instanceof Error ? e.message : String(e) };
+    }
+
     return NextResponse.json({
       ok: true,
       pingedAt: new Date().toISOString(),
       autoAnalyze: autoAnalyzeResult,
+      processDue: processDueResult,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Ping failed";

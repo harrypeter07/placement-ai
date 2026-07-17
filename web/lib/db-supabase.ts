@@ -183,7 +183,8 @@ export async function getDueReminders() {
     .eq("enabled", true)
     .eq("sent", false)
     .in("status", ["active", "snoozed"])
-    .lte("scheduled_at", nowStr);
+    .lte("scheduled_at", nowStr)
+    .or(`snooze_until.is.null,snooze_until.lte.${nowStr}`);
 
   if (error) {
     console.error("[db-supabase] getDueReminders error:", error);

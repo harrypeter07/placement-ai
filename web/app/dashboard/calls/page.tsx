@@ -301,20 +301,50 @@ export default function CallAlertsPage() {
                                   )}
                                 </td>
                                 <td className="px-4 py-3.5 text-right">
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    className="h-8 text-xs bg-primary/10 border-primary/20 text-primary hover:bg-primary/20"
-                                    disabled={testingCallId === c.id}
-                                    onClick={() => triggerCallAlertTest(c.id)}
-                                  >
-                                    {testingCallId === c.id ? (
-                                      <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                                    ) : (
-                                      <Play className="h-3 w-3 mr-1" />
-                                    )}
-                                    Call Now
-                                  </Button>
+                                  <div className="flex justify-end items-center gap-2">
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="h-8 text-xs bg-primary/10 border-primary/20 text-primary hover:bg-primary/20"
+                                      disabled={testingCallId === c.id}
+                                      onClick={() => triggerCallAlertTest(c.id)}
+                                    >
+                                      {testingCallId === c.id ? (
+                                        <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                      ) : (
+                                        <Play className="h-3 w-3 mr-1" />
+                                      )}
+                                      Call Now
+                                    </Button>
+                                    <Select
+                                      onValueChange={(val) => {
+                                        if (val === "custom") {
+                                          const customTime = prompt("Enter custom reschedule date/time (e.g. YYYY-MM-DD HH:MM):");
+                                          if (customTime) {
+                                            const parsedDate = new Date(customTime);
+                                            if (isNaN(parsedDate.getTime())) {
+                                              toast.error("Invalid date format. Use YYYY-MM-DD HH:MM");
+                                            } else {
+                                              void updateCallStatus(c.id, { scheduledAt: parsedDate.toISOString() } as any);
+                                            }
+                                          }
+                                        } else {
+                                          void updateCallStatus(c.id, { rescheduleOffsetHours: Number(val) } as any);
+                                        }
+                                      }}
+                                    >
+                                      <SelectTrigger className="h-8 text-xs bg-transparent border-white/10 w-28">
+                                        <SelectValue placeholder="Reschedule" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="1">⏳ +1 Hour</SelectItem>
+                                        <SelectItem value="2">⏳ +2 Hours</SelectItem>
+                                        <SelectItem value="4">⏳ +4 Hours</SelectItem>
+                                        <SelectItem value="24">📅 +1 Day</SelectItem>
+                                        <SelectItem value="custom">✏️ Custom Time</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
                                 </td>
                               </tr>
                             );
