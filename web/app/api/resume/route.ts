@@ -85,6 +85,29 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Failed to save resume analysis" }, { status: 500 });
     }
 
+    // Auto-fill student profile settings with extracted values
+    if (analysis.parsedProfile) {
+      try {
+        const { getStudentPreferences } = await import("@/lib/db-supabase");
+        const prefs = await getStudentPreferences(user.id);
+        const currentProfile = prefs?.form_profile || {};
+
+        const updatedProfile = { ...currentProfile };
+        Object.entries(analysis.parsedProfile).forEach(([key, val]) => {
+          if (val) {
+            updatedProfile[key] = val;
+          }
+        });
+
+        await supabase
+          .from("student_preferences")
+          .update({ form_profile: updatedProfile })
+          .eq("user_id", user.id);
+      } catch (prefErr) {
+        console.warn("[POST resume] profile pre-fill warning:", prefErr);
+      }
+    }
+
     const mapped = {
       _id: resume.id,
       id: resume.id,

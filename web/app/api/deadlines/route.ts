@@ -13,14 +13,20 @@ export async function GET(req: Request) {
     const status = searchParams.get("status");
     const search = searchParams.get("search");
     const sort = searchParams.get("sort") || "deadline";
+    const nowStr = new Date().toISOString();
 
     let query = supabase
       .from("deadlines")
       .select("*")
       .or(`user_id.eq.${user.id},is_global.eq.true`);
 
-    if (status) {
-      query = query.eq("status", status);
+    if (status === "past") {
+      query = query.lt("deadline_date", nowStr);
+    } else {
+      query = query.gte("deadline_date", nowStr);
+      if (status && status !== "all") {
+        query = query.eq("status", status);
+      }
     }
     if (search) {
       query = query.ilike("company", `%${search}%`);

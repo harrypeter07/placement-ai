@@ -237,15 +237,22 @@ function PlacementsContent() {
 
   const groupedReminders = useMemo(() => {
     const order = ["critical", "high", "medium", "low"];
-    const buckets: Record<string, ReminderRow[]> = { critical: [], high: [], medium: [], low: [] };
+    const buckets: Record<string, Record<string, ReminderRow[]>> = { critical: {}, high: {}, medium: {}, low: {} };
     for (const r of reminders || []) {
       if (r.status === "completed" || r.status === "cancelled") continue;
       const p = (r.priority || "medium").toLowerCase();
       const key = buckets[p] !== undefined ? p : "medium";
-      buckets[key].push(r);
+      const dl = typeof r.deadlineId === "object" ? r.deadlineId : null;
+      const groupKey = dl?.company ? `${dl.company} — ${dl.role || "Role"}` : (r.title || "Custom Alarm");
+      if (!buckets[key][groupKey]) {
+        buckets[key][groupKey] = [];
+      }
+      buckets[key][groupKey].push(r);
     }
     for (const k of order) {
-      buckets[k]?.sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
+      for (const groupKey in buckets[k]) {
+        buckets[k][groupKey]?.sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
+      }
     }
     return { buckets, order };
   }, [reminders]);
@@ -378,60 +385,87 @@ function PlacementsContent() {
               <Skeleton className="h-48 rounded-xl" />
             ) : (
               groupedReminders.order.map((prio) => {
-                const list = groupedReminders.buckets[prio] || [];
-                if (!list.length) return null;
+                const groups = groupedReminders.buckets[prio] || {};
+                const groupKeys = Object.keys(groups);
+                if (!groupKeys.length) return null;
+
                 return (
-                  <div key={prio}>
-                    <h3 className="text-sm font-semibold capitalize mb-2 flex items-center gap-2">
+                  <div key={prio} className="space-y-2">
+                    <h3 className="text-sm font-semibold capitalize mb-2 flex items-center gap-2 mt-4 text-foreground">
                       <AlarmClock className="h-4 w-4" /> {prio}
                     </h3>
-                    <div className="space-y-2">
-                      {list.map((r) => (
-                        <Card key={r._id} className="glass">
-                          <CardContent className="p-4 flex flex-wrap justify-between gap-3">
-                            <div>
-                              <p className="font-medium">{r.title || deadlineLabel(r)}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {formatDate(r.scheduledAt)} · {r.status}
-                                {r.aiSuggested && (
-                                  <Badge variant="outline" className="ml-2 text-[10px]">
-                                    <Sparkles className="h-3 w-3 mr-0.5 inline" /> AI
-                                  </Badge>
-                                )}
-                              </p>
-                            </div>
-                            <div className="flex gap-1">
-                              {r.status === "paused" ? (
-                                <LoadingButton
-                                  size="sm"
-                                  variant="outline"
-                                  loading={reminderActionId === r._id}
-                                  onClick={() => reminderAct(r._id, { status: "active" })}
-                                >
-                                  <Play className="h-4 w-4" />
-                                </LoadingButton>
-                              ) : (
-                                <LoadingButton
-                                  size="sm"
-                                  variant="outline"
-                                  loading={reminderActionId === r._id}
-                                  onClick={() => reminderAct(r._id, { status: "paused" })}
-                                >
-                                  <Pause className="h-4 w-4" />
-                                </LoadingButton>
-                              )}
-                              <LoadingButton
-                                size="sm"
-                                variant="ghost"
-                                loading={reminderActionId === r._id}
-                                onClick={() => removeReminder(r._id)}
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </LoadingButton>
-                            </div>
-                          </CardContent>
-                        </Card>
-                      ))}
+                    <div className="space-y-2.5">
+                      {groupKeys.map((groupKey) => {
+                        const items = groups[groupKey] || [];
+                        const firstItem = items[0];
+                        if (!firstItem) return null;
+
+                        return (
+                          <Card key={groupKey} className="glass border-white/5 overflow-hidden">
+                            <CardContent className="p-4 space-y-3">
+                              <div className="flex justify-between items-start flex-wrap gap-2">
+                                <div className="space-y-1">
+                                  <h4 className="font-semibold text-sm text-foreground">{groupKey}</h4>
+                                  <p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap max-h-24 overflow-y-auto pr-2">
+                                    {firstItem.message || "No message description available."}
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Alarms sublist */}
+                              <div className="pt-2.5 border-t border-white/5 space-y-2">
+                                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Scheduled Alarms</p>
+                                <div className="flex flex-wrap gap-2">
+                                  {items.map((r) => {
+                                    const date = new Date(r.scheduledAt);
+                                    const dayName = date.toLocaleDateString("en-IN", { weekday: 'short' }); // e.g. Mon
+                                    const dateStr = date.toLocaleDateString("en-IN", { day: 'numeric', month: 'short' }); // e.g. 17 Jul
+                                    const timeStr = date.toLocaleTimeString("en-IN", { hour: '2-digit', minute: '2-digit', hour12: false }); // e.g. 09:00
+
+                                    return (
+                                      <div
+                                        key={r._id}
+                                        className={cn(
+                                          "flex items-center gap-2 px-2.5 py-1 rounded-md border text-xs font-mono transition-all duration-200",
+                                          r.status === "active"
+                                            ? "bg-primary/5 border-primary/20 text-foreground"
+                                            : "bg-white/[0.01] border-white/5 text-muted-foreground line-through opacity-40"
+                                        )}
+                                      >
+                                        <span>{dayName}, {dateStr} {timeStr}</span>
+                                        
+                                        {/* Play / Pause Toggle Button */}
+                                        <LoadingButton
+                                          size="icon"
+                                          variant="ghost"
+                                          className="h-5 w-5 hover:bg-white/10 shrink-0 text-muted-foreground hover:text-foreground"
+                                          loading={reminderActionId === r._id}
+                                          title={r.status === "paused" ? "Resume" : "Pause"}
+                                          onClick={() => void reminderAct(r._id, { status: r.status === "paused" ? "active" : "paused" })}
+                                        >
+                                          {r.status === "paused" ? <Play className="h-3 w-3" /> : <Pause className="h-3 w-3" />}
+                                        </LoadingButton>
+
+                                        {/* Delete Alert Button */}
+                                        <LoadingButton
+                                          size="icon"
+                                          variant="ghost"
+                                          className="h-5 w-5 hover:bg-red-500/10 hover:text-red-400 shrink-0"
+                                          loading={reminderActionId === r._id}
+                                          title="Delete Alert"
+                                          onClick={() => void removeReminder(r._id)}
+                                        >
+                                          <Trash2 className="h-3 w-3" />
+                                        </LoadingButton>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </CardContent>
+                          </Card>
+                        );
+                      })}
                     </div>
                   </div>
                 );
@@ -518,6 +552,7 @@ function DeadlineFilters({
         </SelectTrigger>
         <SelectContent>
           <SelectItem value="all">All Status</SelectItem>
+          <SelectItem value="past">Past / Missed</SelectItem>
           {Object.keys(statusColors).map((s) => (
             <SelectItem key={s} value={s}>
               {s.replace("_", " ")}

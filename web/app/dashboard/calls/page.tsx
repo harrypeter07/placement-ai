@@ -71,6 +71,8 @@ export default function CallAlertsPage() {
   const [loading, setLoading] = useState(true);
   const [savingSettings, setSavingSettings] = useState(false);
   const [testingCallId, setTestingCallId] = useState<string | null>(null);
+  const [rescheduleModalId, setRescheduleModalId] = useState<string | null>(null);
+  const [customDateTime, setCustomDateTime] = useState("");
 
   const fetchCallsAndSettings = useCallback(async () => {
     try {
@@ -319,15 +321,7 @@ export default function CallAlertsPage() {
                                     <Select
                                       onValueChange={(val) => {
                                         if (val === "custom") {
-                                          const customTime = prompt("Enter custom reschedule date/time (e.g. YYYY-MM-DD HH:MM):");
-                                          if (customTime) {
-                                            const parsedDate = new Date(customTime);
-                                            if (isNaN(parsedDate.getTime())) {
-                                              toast.error("Invalid date format. Use YYYY-MM-DD HH:MM");
-                                            } else {
-                                              void updateCallStatus(c.id, { scheduledAt: parsedDate.toISOString() } as any);
-                                            }
-                                          }
+                                          setRescheduleModalId(c.id);
                                         } else {
                                           void updateCallStatus(c.id, { rescheduleOffsetHours: Number(val) } as any);
                                         }
@@ -536,6 +530,54 @@ export default function CallAlertsPage() {
                   )}
                 </CardContent>
               </Card>
+            </div>
+          </div>
+        )}
+        
+        {rescheduleModalId && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+            <div className="bg-zinc-950 border border-white/10 rounded-xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+              <h3 className="text-lg font-semibold text-foreground">Select Call Reschedule Time</h3>
+              <p className="text-xs text-muted-foreground">Choose a specific date and time to trigger this voice alarm reminder.</p>
+              
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground font-medium">Reschedule Date & Time</Label>
+                <Input 
+                  type="datetime-local" 
+                  value={customDateTime}
+                  onChange={(e) => setCustomDateTime(e.target.value)}
+                  className="w-full bg-black/40 border border-white/10 rounded px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary"
+                />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => {
+                    setRescheduleModalId(null);
+                    setCustomDateTime("");
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  variant="glow" 
+                  size="sm" 
+                  onClick={() => {
+                    if (!customDateTime) {
+                      toast.error("Please pick a valid date and time");
+                      return;
+                    }
+                    const date = new Date(customDateTime);
+                    void updateCallStatus(rescheduleModalId, { scheduledAt: date.toISOString() } as any);
+                    setRescheduleModalId(null);
+                    setCustomDateTime("");
+                  }}
+                >
+                  Reschedule
+                </Button>
+              </div>
             </div>
           </div>
         )}

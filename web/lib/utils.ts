@@ -16,12 +16,18 @@ export function formatDate(date: Date | string): string {
 export function formatRelative(date: Date | string): string {
   const d = new Date(date);
   const now = new Date();
-  const diff = d.getTime() - now.getTime();
-  const days = Math.ceil(diff / (1000 * 60 * 60 * 24));
-  if (days < 0) return `${Math.abs(days)}d ago`;
-  if (days === 0) return "Today";
-  if (days === 1) return "Tomorrow";
-  return `In ${days}d`;
+
+  // Compare using local midnight dates to avoid hour-boundary differences
+  const dMidnight = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const nowMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  const diffTime = dMidnight.getTime() - nowMidnight.getTime();
+  const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+  if (diffDays < 0) return `${Math.abs(diffDays)}d ago`;
+  if (diffDays === 0) return "Today";
+  if (diffDays === 1) return "Tomorrow";
+  return `In ${diffDays}d`;
 }
 
 export function getUrgencyLevel(deadline: Date | string): "critical" | "high" | "medium" | "low" {

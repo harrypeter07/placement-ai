@@ -111,6 +111,17 @@ export async function analyzeResume(text: string): Promise<{
   missingSkills: string[];
   suggestions: string[];
   companyCompatibility: { company: string; match: number }[];
+  parsedProfile?: {
+    fullName?: string;
+    email?: string;
+    phone?: string;
+    cgpa?: string;
+    branch?: string;
+    graduationYear?: string;
+    githubLink?: string;
+    linkedInLink?: string;
+    rollNumber?: string;
+  };
 }> {
   const defaultResult = {
     atsScore: 72,
@@ -126,6 +137,17 @@ export async function analyzeResume(text: string): Promise<{
       { company: "Microsoft", match: 75 },
       { company: "Amazon", match: 71 },
     ],
+    parsedProfile: {
+      fullName: "",
+      email: "",
+      phone: "",
+      cgpa: "",
+      branch: "",
+      graduationYear: "",
+      githubLink: "",
+      linkedInLink: "",
+      rollNumber: "",
+    }
   };
 
   const apiKey = await getGeminiApiKey();
@@ -140,7 +162,18 @@ export async function analyzeResume(text: string): Promise<{
   "skills": ["string"],
   "missingSkills": ["string"],
   "suggestions": ["string"],
-  "companyCompatibility": [{"company": "string", "match": number}]
+  "companyCompatibility": [{"company": "string", "match": number}],
+  "parsedProfile": {
+    "fullName": "string or empty",
+    "email": "string or empty",
+    "phone": "string or empty",
+    "cgpa": "string or empty",
+    "branch": "string or empty (e.g. CSE, IT, Mechanical, Electrical)",
+    "graduationYear": "string or empty (e.g. 2027)",
+    "githubLink": "string or empty",
+    "linkedInLink": "string or empty",
+    "rollNumber": "string or empty (college enrollment/registration/roll number if found)"
+  }
 }
 
 Resume:
