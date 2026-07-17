@@ -12,6 +12,8 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { Badge } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Select,
@@ -21,7 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Loader2, Save, RotateCcw, Zap, Activity } from "lucide-react";
+import { Loader2, Save, RotateCcw, Zap, Activity, PhoneCall } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
 type Prefs = {
@@ -104,6 +106,36 @@ export default function SettingsPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [logs, setLogs] = useState<any[]>([]);
   const [logsLoading, setLogsLoading] = useState(false);
+  const [activeCallSid, setActiveCallSid] = useState<string | null>(null);
+  const [activeCallStatus, setActiveCallStatus] = useState<string | null>(null);
+  const [activeCallTracking, setActiveCallTracking] = useState(false);
+
+  const startSettingsCallPolling = (sid: string) => {
+    setActiveCallSid(sid);
+    setActiveCallStatus("initiated");
+    setActiveCallTracking(true);
+
+    let attempts = 0;
+    const interval = setInterval(async () => {
+      attempts++;
+      if (attempts > 30) {
+        clearInterval(interval);
+        return;
+      }
+      try {
+        const res = await fetch(`/api/calls/status?sid=${sid}`);
+        if (res.ok) {
+          const data = await res.json();
+          setActiveCallStatus(data.status);
+          if (["completed", "failed", "busy", "no-answer", "canceled"].includes(data.status)) {
+            clearInterval(interval);
+          }
+        }
+      } catch (err) {
+        console.error("Error polling call:", err);
+      }
+    }, 3000);
+  };
 
   const loadLogs = useCallback(() => {
     setLogsLoading(true);
@@ -257,6 +289,9 @@ export default function SettingsPage() {
       const data = await res.json();
       if (res.ok && data.ok) {
         toast.success(`Success! Test call placed. Call SID: ${data.callSid}`, { id: toastId });
+        if (data.callSid) {
+          startSettingsCallPolling(data.callSid);
+        }
       } else {
         toast.error(data.error || "Failed to trigger test call.", { id: toastId });
       }
@@ -654,46 +689,40 @@ export default function SettingsPage() {
             </Card>
 
             <Card className="glass">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Activity className="h-5 w-5 text-primary" />
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <Activity className="h-4 w-4 text-primary" />
                   Recent Decisions Log
                 </CardTitle>
-                <CardDescription>
-                  Historical logs showing decisions made by the automation engine.
-                </CardDescription>
               </CardHeader>
-              <CardContent className="space-y-4">
-                {logsLoading ? (
-                  <div className="space-y-2">
-                    <Skeleton className="h-10 w-full" />
-                    <Skeleton className="h-10 w-full" />
-                    <Skeleton className="h-10 w-full" />
-                  </div>
-                ) : logs.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">No recent decisions made yet.</p>
-                ) : (
-                  <div className="space-y-3 max-h-[400px] overflow-y-auto pr-2">
-                    {logs.map((log) => (
-                      <div
-                        key={log._id}
-                        className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-lg border bg-white/5 p-3 text-sm"
-                      >
-                        <div className="space-y-1">
-                          <p className="font-medium text-foreground">{log.summary}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {new Date(log.createdAt).toLocaleString()}
-                          </p>
-                        </div>
-                        <div className="self-start sm:self-center">
-                          <span className="inline-block rounded bg-primary/10 px-2 py-0.5 text-xs text-primary uppercase font-semibold">
+              <CardContent>
+                <details className="group cursor-pointer">
+                  <summary className="text-xs text-muted-foreground hover:text-foreground transition-colors select-none font-medium">
+                    Show latest automation engine logs ({logs.length} items)
+                  </summary>
+                  <div className="space-y-2 mt-3 pt-3 border-t border-white/5 max-h-60 overflow-y-auto pr-2 text-xs">
+                    {logsLoading ? (
+                      <div className="space-y-1.5">
+                        <Skeleton className="h-7 w-full" />
+                        <Skeleton className="h-7 w-full" />
+                      </div>
+                    ) : logs.length === 0 ? (
+                      <p className="text-muted-foreground">No recent decisions logged.</p>
+                    ) : (
+                      logs.slice(0, 8).map((log) => (
+                        <div key={log._id} className="flex justify-between items-center gap-4 py-1.5 border-b border-white/[0.02] last:border-0">
+                          <div className="space-y-0.5">
+                            <span className="font-medium text-foreground">{log.summary}</span>
+                            <span className="block text-[10px] text-muted-foreground">{new Date(log.createdAt).toLocaleString()}</span>
+                          </div>
+                          <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[9px] text-primary uppercase font-bold tracking-wider shrink-0">
                             {log.type}
                           </span>
                         </div>
-                      </div>
-                    ))}
+                      ))
+                    )}
                   </div>
-                )}
+                </details>
               </CardContent>
             </Card>
           </TabsContent>
@@ -1118,6 +1147,56 @@ export default function SettingsPage() {
           </TabsContent>
         </Tabs>
           </>
+        )}
+
+        {activeCallTracking && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+            <div className="bg-zinc-950 border border-white/10 rounded-2xl max-w-sm w-full p-6 space-y-5 shadow-2xl text-center">
+              <div className="mx-auto h-16 w-16 bg-primary/10 rounded-full flex items-center justify-center border border-primary/20 relative">
+                <PhoneCall className={cn(
+                  "h-8 w-8 text-primary", 
+                  ["initiated", "ringing", "in-progress"].includes(activeCallStatus || "") ? "animate-pulse" : ""
+                )} />
+                {["initiated", "ringing", "in-progress"].includes(activeCallStatus || "") && (
+                  <span className="absolute inset-0 rounded-full bg-primary/10 animate-ping opacity-75" />
+                )}
+              </div>
+
+              <div className="space-y-1">
+                <h3 className="text-lg font-semibold text-foreground">Live Test Call Status</h3>
+                <p className="text-xs text-muted-foreground font-mono truncate">SID: {activeCallSid}</p>
+              </div>
+
+              <div className="py-2.5 px-4 bg-white/5 rounded-xl flex items-center justify-between border border-white/5">
+                <span className="text-xs text-muted-foreground font-medium">Status</span>
+                <Badge 
+                  variant={
+                    activeCallStatus === "completed" ? "success" : 
+                    ["failed", "no-answer", "busy", "canceled"].includes(activeCallStatus || "") ? "critical" : 
+                    activeCallStatus === "in-progress" ? "warning" : "secondary"
+                  }
+                  className="capitalize font-mono animate-pulse"
+                >
+                  {activeCallStatus || "connecting..."}
+                </Badge>
+              </div>
+
+              <div className="flex justify-center gap-2 pt-2">
+                <Button 
+                  variant={["completed", "failed", "no-answer", "busy", "canceled"].includes(activeCallStatus || "") ? "glow" : "outline"} 
+                  size="sm" 
+                  className="w-full"
+                  onClick={() => {
+                    setActiveCallTracking(false);
+                    setActiveCallSid(null);
+                    setActiveCallStatus(null);
+                  }}
+                >
+                  {["completed", "failed", "no-answer", "busy", "canceled"].includes(activeCallStatus || "") ? "Close" : "Dismiss Tracking"}
+                </Button>
+              </div>
+            </div>
+          </div>
         )}
       </main>
     </>

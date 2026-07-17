@@ -23,6 +23,7 @@ import {
   Save,
   Loader2,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { formatDate } from "@/lib/utils";
 
@@ -73,6 +74,36 @@ export default function CallAlertsPage() {
   const [testingCallId, setTestingCallId] = useState<string | null>(null);
   const [rescheduleModalId, setRescheduleModalId] = useState<string | null>(null);
   const [customDateTime, setCustomDateTime] = useState("");
+  const [activeCallSid, setActiveCallSid] = useState<string | null>(null);
+  const [activeCallStatus, setActiveCallStatus] = useState<string | null>(null);
+  const [activeCallTracking, setActiveCallTracking] = useState(false);
+
+  const startCallPolling = (sid: string) => {
+    setActiveCallSid(sid);
+    setActiveCallStatus("initiated");
+    setActiveCallTracking(true);
+    
+    let attempts = 0;
+    const interval = setInterval(async () => {
+      attempts++;
+      if (attempts > 30) {
+        clearInterval(interval);
+        return;
+      }
+      try {
+        const res = await fetch(`/api/calls/status?sid=${sid}`);
+        if (res.ok) {
+          const data = await res.json();
+          setActiveCallStatus(data.status);
+          if (["completed", "failed", "busy", "no-answer", "canceled"].includes(data.status)) {
+            clearInterval(interval);
+          }
+        }
+      } catch (err) {
+        console.error("Error polling call:", err);
+      }
+    }, 3000);
+  };
 
   const fetchCallsAndSettings = useCallback(async () => {
     try {
@@ -142,6 +173,9 @@ export default function CallAlertsPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to trigger call");
       toast.success("Test call placed successfully!");
+      if (data.callSid) {
+        startCallPolling(data.callSid);
+      }
       void fetchCallsAndSettings();
     } catch (e: any) {
       toast.error(e.message || "Failed to trigger call");
@@ -576,6 +610,56 @@ export default function CallAlertsPage() {
                   }}
                 >
                   Reschedule
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeCallTracking && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
+            <div className="bg-zinc-950 border border-white/10 rounded-2xl max-w-sm w-full p-6 space-y-5 shadow-2xl text-center">
+              <div className="mx-auto h-16 w-16 bg-primary/10 rounded-full flex items-center justify-center border border-primary/20 relative">
+                <PhoneCall className={cn(
+                  "h-8 w-8 text-primary", 
+                  ["initiated", "ringing", "in-progress"].includes(activeCallStatus || "") ? "animate-pulse" : ""
+                )} />
+                {["initiated", "ringing", "in-progress"].includes(activeCallStatus || "") && (
+                  <span className="absolute inset-0 rounded-full bg-primary/10 animate-ping opacity-75" />
+                )}
+              </div>
+
+              <div className="space-y-1">
+                <h3 className="text-lg font-semibold text-foreground">Live Test Call Status</h3>
+                <p className="text-xs text-muted-foreground font-mono truncate">SID: {activeCallSid}</p>
+              </div>
+
+              <div className="py-2.5 px-4 bg-white/5 rounded-xl flex items-center justify-between border border-white/5">
+                <span className="text-xs text-muted-foreground font-medium">Status</span>
+                <Badge 
+                  variant={
+                    activeCallStatus === "completed" ? "success" : 
+                    ["failed", "no-answer", "busy", "canceled"].includes(activeCallStatus || "") ? "critical" : 
+                    activeCallStatus === "in-progress" ? "warning" : "secondary"
+                  }
+                  className="capitalize font-mono animate-pulse"
+                >
+                  {activeCallStatus || "connecting..."}
+                </Badge>
+              </div>
+
+              <div className="flex justify-center gap-2 pt-2">
+                <Button 
+                  variant={["completed", "failed", "no-answer", "busy", "canceled"].includes(activeCallStatus || "") ? "glow" : "outline"} 
+                  size="sm" 
+                  className="w-full"
+                  onClick={() => {
+                    setActiveCallTracking(false);
+                    setActiveCallSid(null);
+                    setActiveCallStatus(null);
+                  }}
+                >
+                  {["completed", "failed", "no-answer", "busy", "canceled"].includes(activeCallStatus || "") ? "Close" : "Dismiss Tracking"}
                 </Button>
               </div>
             </div>

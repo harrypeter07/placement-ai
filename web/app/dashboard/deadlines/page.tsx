@@ -1,7 +1,6 @@
 "use client";
 
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   Search,
@@ -26,7 +25,6 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { formatDate, formatRelative, getUrgencyLevel } from "@/lib/utils";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -80,10 +78,6 @@ function deadlineLabel(r: ReminderRow) {
 }
 
 function PlacementsContent() {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const tab = searchParams.get("tab") === "reminders" ? "reminders" : "deadlines";
-
   const cache = useDashboardCache();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -135,9 +129,7 @@ function PlacementsContent() {
     pollMs: 90_000,
   });
 
-  const setTab = (t: string) => {
-    router.replace(t === "reminders" ? "/dashboard/deadlines?tab=reminders" : "/dashboard/deadlines");
-  };
+
 
   async function updateStatus(id: string, status: DeadlineStatus) {
     setReminderActionId(id);
@@ -235,26 +227,12 @@ function PlacementsContent() {
     }
   }
 
-  const groupedReminders = useMemo(() => {
-    const order = ["critical", "high", "medium", "low"];
-    const buckets: Record<string, Record<string, ReminderRow[]>> = { critical: {}, high: {}, medium: {}, low: {} };
-    for (const r of reminders || []) {
-      if (r.status === "completed" || r.status === "cancelled") continue;
-      const p = (r.priority || "medium").toLowerCase();
-      const key = buckets[p] !== undefined ? p : "medium";
+  const customReminders = useMemo(() => {
+    return reminders?.filter((r) => {
+      if (r.status === "completed" || r.status === "cancelled") return false;
       const dl = typeof r.deadlineId === "object" ? r.deadlineId : null;
-      const groupKey = dl?.company ? `${dl.company} — ${dl.role || "Role"}` : (r.title || "Custom Alarm");
-      if (!buckets[key][groupKey]) {
-        buckets[key][groupKey] = [];
-      }
-      buckets[key][groupKey].push(r);
-    }
-    for (const k of order) {
-      for (const groupKey in buckets[k]) {
-        buckets[k][groupKey]?.sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
-      }
-    }
-    return { buckets, order };
+      return !dl && !r.deadlineId;
+    }) || [];
   }, [reminders]);
 
   const dlList = deadlines || [];
@@ -281,205 +259,202 @@ function PlacementsContent() {
           />
         </div>
 
-        <Tabs value={tab} onValueChange={setTab}>
-          <TabsList>
-            <TabsTrigger value="deadlines">Deadlines</TabsTrigger>
-            <TabsTrigger value="reminders">
-              Reminders
-              {(reminders?.length ?? 0) > 0 && (
-                <Badge variant="secondary" className="ml-2 h-5">
-                  {reminders?.filter((r) => r.status === "active" || r.status === "snoozed").length}
-                </Badge>
-              )}
-            </TabsTrigger>
-          </TabsList>
+        <DeadlineFilters
+          search={search}
+          setSearch={setSearch}
+          statusFilter={statusFilter}
+          setStatusFilter={setStatusFilter}
+          sort={sort}
+          setSort={setSort}
+          open={open}
+          setOpen={setOpen}
+          form={form}
+          setForm={setForm}
+          onSubmit={createDeadline}
+          saving={savingDeadline}
+        />
 
-          <TabsContent value="deadlines" className="space-y-4 mt-4">
-            <DeadlineFilters
-              search={search}
-              setSearch={setSearch}
-              statusFilter={statusFilter}
-              setStatusFilter={setStatusFilter}
-              sort={sort}
-              setSort={setSort}
-              open={open}
-              setOpen={setOpen}
-              form={form}
-              setForm={setForm}
-              onSubmit={createDeadline}
-              saving={savingDeadline}
-            />
-            {loadingDl && !dlList.length ? (
-              <div className="space-y-3">
-                {Array.from({ length: 4 }).map((_, i) => (
-                  <Skeleton key={i} className="h-24 rounded-xl" />
-                ))}
-              </div>
-            ) : dlList.length === 0 ? (
-              <Card className="glass">
-                <CardContent className="py-12 text-center text-muted-foreground">
-                  No deadlines. Add one or enable Telegram monitoring in Notifications.
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="space-y-3">
-                {dlList.map((d) => {
-                  const urgency = getUrgencyLevel(d.deadline);
-                  return (
-                    <Card key={d._id} className="glass glow-border">
-                      <CardContent className="p-4 flex flex-col sm:flex-row sm:items-center gap-4">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <h3 className="font-semibold">{d.company}</h3>
-                            <Badge variant={statusColors[d.status]}>{d.status.replace("_", " ")}</Badge>
-                            <Badge variant={urgency === "critical" ? "critical" : "outline"}>
-                              {formatRelative(d.deadline)}
-                            </Badge>
-                          </div>
-                          <p className="text-sm text-muted-foreground">{d.role}</p>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            Due {formatDate(d.deadline)}
-                          </p>
-                          {d.sourceMessageText && (
-                            <div className="mt-2 text-[11px] text-muted-foreground bg-black/10 p-2.5 rounded-lg border border-white/5 whitespace-pre-wrap max-h-24 overflow-y-auto">
-                              <strong className="text-foreground">Source Message:</strong>
-                              <p className="mt-1 font-mono opacity-85 leading-relaxed">{d.sourceMessageText}</p>
-                            </div>
-                          )}
-                        </div>
+        {loadingDl && !dlList.length ? (
+          <div className="space-y-3">
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-24 rounded-xl" />
+            ))}
+          </div>
+        ) : dlList.length === 0 ? (
+          <Card className="glass">
+            <CardContent className="py-12 text-center text-muted-foreground">
+              No deadlines. Add one or enable Telegram monitoring in Notifications.
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            {dlList.map((d) => {
+              const urgency = getUrgencyLevel(d.deadline);
+              // Find matching alarms/reminders for this deadline
+              const deadlineReminders = reminders?.filter((r) => {
+                if (r.status === "completed" || r.status === "cancelled") return false;
+                const dl = typeof r.deadlineId === "object" ? r.deadlineId : null;
+                return dl ? dl._id === d._id : r.deadlineId === d._id;
+              }) || [];
+
+              return (
+                <Card key={d._id} className="glass glow-border">
+                  <CardContent className="p-4 flex flex-col gap-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                      <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <Select
-                            value={d.status}
-                            onValueChange={(v) => updateStatus(d._id, v as DeadlineStatus)}
-                            disabled={reminderActionId === d._id}
-                          >
-                            <SelectTrigger className="w-36">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {Object.keys(statusColors).map((s) => (
-                                <SelectItem key={s} value={s}>
-                                  {s.replace("_", " ")}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                          {d.links?.[0] && (
-                            <Button variant="outline" size="icon" asChild>
-                              <a href={d.links[0]} target="_blank" rel="noopener noreferrer">
-                                <ExternalLink className="h-4 w-4" />
-                              </a>
-                            </Button>
-                          )}
+                          <h3 className="font-semibold text-foreground text-base">{d.company}</h3>
+                          <Badge variant={statusColors[d.status]}>{d.status.replace("_", " ")}</Badge>
+                          <Badge variant={urgency === "critical" ? "critical" : "outline"}>
+                            {formatRelative(d.deadline)}
+                          </Badge>
                         </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-              </div>
-            )}
-          </TabsContent>
+                        <p className="text-sm text-muted-foreground mt-0.5">{d.role}</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Due {formatDate(d.deadline)}
+                        </p>
+                        {d.sourceMessageText && (
+                          <div className="mt-2 text-[11px] text-muted-foreground bg-black/10 p-2.5 rounded-lg border border-white/5 whitespace-pre-wrap max-h-24 overflow-y-auto">
+                            <strong className="text-foreground">Source Message:</strong>
+                            <p className="mt-1 font-mono opacity-85 leading-relaxed">{d.sourceMessageText}</p>
+                          </div>
+                        )}
+                      </div>
+                      
+                      <div className="flex items-center gap-2 flex-wrap shrink-0">
+                        <Select
+                          value={d.status}
+                          onValueChange={(v) => updateStatus(d._id, v as DeadlineStatus)}
+                          disabled={reminderActionId === d._id}
+                        >
+                          <SelectTrigger className="w-36">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {Object.keys(statusColors).map((s) => (
+                              <SelectItem key={s} value={s}>
+                                {s.replace("_", " ")}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        {d.links?.[0] && (
+                          <Button variant="outline" size="icon" asChild>
+                            <a href={d.links[0]} target="_blank" rel="noopener noreferrer">
+                              <ExternalLink className="h-4 w-4" />
+                            </a>
+                          </Button>
+                        )}
+                      </div>
+                    </div>
 
-          <TabsContent value="reminders" className="space-y-4 mt-4">
-            {loadingRm && !reminders?.length ? (
-              <Skeleton className="h-48 rounded-xl" />
-            ) : (
-              groupedReminders.order.map((prio) => {
-                const groups = groupedReminders.buckets[prio] || {};
-                const groupKeys = Object.keys(groups);
-                if (!groupKeys.length) return null;
+                    {/* Inline alarms/reminders list for this deadline */}
+                    {deadlineReminders.length > 0 && (
+                      <div className="pt-3 border-t border-white/5 space-y-2">
+                        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                          <AlarmClock className="h-3 w-3 text-primary animate-pulse" /> Scheduled call alarms
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {deadlineReminders.map((r) => {
+                            const date = new Date(r.scheduledAt);
+                            const dayName = date.toLocaleDateString("en-IN", { weekday: 'short' }); // e.g. Mon
+                            const dateStr = date.toLocaleDateString("en-IN", { day: 'numeric', month: 'short' }); // e.g. 17 Jul
+                            const timeStr = date.toLocaleTimeString("en-IN", { hour: '2-digit', minute: '2-digit', hour12: false }); // e.g. 09:00
+
+                            return (
+                              <div
+                                key={r._id}
+                                className={cn(
+                                  "flex items-center gap-2 px-2.5 py-1 rounded-md border text-xs font-mono transition-all duration-200",
+                                  r.status === "active"
+                                    ? "bg-primary/5 border-primary/20 text-foreground"
+                                    : "bg-white/[0.01] border-white/5 text-muted-foreground line-through opacity-40"
+                                )}
+                              >
+                                <span>{dayName}, {dateStr} {timeStr}</span>
+                                
+                                <LoadingButton
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-5 w-5 hover:bg-white/10 shrink-0 text-muted-foreground hover:text-foreground"
+                                  loading={reminderActionId === r._id}
+                                  title={r.status === "paused" ? "Resume" : "Pause"}
+                                  onClick={() => void reminderAct(r._id, { status: r.status === "paused" ? "active" : "paused" })}
+                                >
+                                  {r.status === "paused" ? <Play className="h-2.5 w-2.5" /> : <Pause className="h-2.5 w-2.5" />}
+                                </LoadingButton>
+
+                                <LoadingButton
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-5 w-5 hover:bg-red-500/10 hover:text-red-400 shrink-0"
+                                  loading={reminderActionId === r._id}
+                                  title="Delete Alert"
+                                  onClick={() => void removeReminder(r._id)}
+                                >
+                                  <Trash2 className="h-2.5 w-2.5" />
+                                </LoadingButton>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Custom / General Alarms Section */}
+        {!loadingRm && customReminders.length > 0 && (
+          <div className="mt-8 space-y-3 pt-6 border-t border-white/10">
+            <h3 className="text-sm font-semibold flex items-center gap-2 text-foreground">
+              <AlarmClock className="h-4 w-4 text-primary animate-bounce" /> Custom Alarms & Reminders
+            </h3>
+            <div className="grid gap-3 sm:grid-cols-2">
+              {customReminders.map((r) => {
+                const date = new Date(r.scheduledAt);
+                const dateText = `${date.toLocaleDateString("en-IN", { weekday: 'short', day: 'numeric', month: 'short' })} @ ${date.toLocaleTimeString("en-IN", { hour: '2-digit', minute: '2-digit', hour12: false })}`;
 
                 return (
-                  <div key={prio} className="space-y-2">
-                    <h3 className="text-sm font-semibold capitalize mb-2 flex items-center gap-2 mt-4 text-foreground">
-                      <AlarmClock className="h-4 w-4" /> {prio}
-                    </h3>
-                    <div className="space-y-2.5">
-                      {groupKeys.map((groupKey) => {
-                        const items = groups[groupKey] || [];
-                        const firstItem = items[0];
-                        if (!firstItem) return null;
-
-                        return (
-                          <Card key={groupKey} className="glass border-white/5 overflow-hidden">
-                            <CardContent className="p-4 space-y-3">
-                              <div className="flex justify-between items-start flex-wrap gap-2">
-                                <div className="space-y-1">
-                                  <h4 className="font-semibold text-sm text-foreground">{groupKey}</h4>
-                                  <p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap max-h-24 overflow-y-auto pr-2">
-                                    {firstItem.message || "No message description available."}
-                                  </p>
-                                </div>
-                              </div>
-
-                              {/* Alarms sublist */}
-                              <div className="pt-2.5 border-t border-white/5 space-y-2">
-                                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Scheduled Alarms</p>
-                                <div className="flex flex-wrap gap-2">
-                                  {items.map((r) => {
-                                    const date = new Date(r.scheduledAt);
-                                    const dayName = date.toLocaleDateString("en-IN", { weekday: 'short' }); // e.g. Mon
-                                    const dateStr = date.toLocaleDateString("en-IN", { day: 'numeric', month: 'short' }); // e.g. 17 Jul
-                                    const timeStr = date.toLocaleTimeString("en-IN", { hour: '2-digit', minute: '2-digit', hour12: false }); // e.g. 09:00
-
-                                    return (
-                                      <div
-                                        key={r._id}
-                                        className={cn(
-                                          "flex items-center gap-2 px-2.5 py-1 rounded-md border text-xs font-mono transition-all duration-200",
-                                          r.status === "active"
-                                            ? "bg-primary/5 border-primary/20 text-foreground"
-                                            : "bg-white/[0.01] border-white/5 text-muted-foreground line-through opacity-40"
-                                        )}
-                                      >
-                                        <span>{dayName}, {dateStr} {timeStr}</span>
-                                        
-                                        {/* Play / Pause Toggle Button */}
-                                        <LoadingButton
-                                          size="icon"
-                                          variant="ghost"
-                                          className="h-5 w-5 hover:bg-white/10 shrink-0 text-muted-foreground hover:text-foreground"
-                                          loading={reminderActionId === r._id}
-                                          title={r.status === "paused" ? "Resume" : "Pause"}
-                                          onClick={() => void reminderAct(r._id, { status: r.status === "paused" ? "active" : "paused" })}
-                                        >
-                                          {r.status === "paused" ? <Play className="h-3 w-3" /> : <Pause className="h-3 w-3" />}
-                                        </LoadingButton>
-
-                                        {/* Delete Alert Button */}
-                                        <LoadingButton
-                                          size="icon"
-                                          variant="ghost"
-                                          className="h-5 w-5 hover:bg-red-500/10 hover:text-red-400 shrink-0"
-                                          loading={reminderActionId === r._id}
-                                          title="Delete Alert"
-                                          onClick={() => void removeReminder(r._id)}
-                                        >
-                                          <Trash2 className="h-3 w-3" />
-                                        </LoadingButton>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            </CardContent>
-                          </Card>
-                        );
-                      })}
-                    </div>
-                  </div>
+                  <Card key={r._id} className="glass">
+                    <CardContent className="p-4 flex justify-between items-center gap-3">
+                      <div>
+                        <p className="font-semibold text-sm text-foreground">{r.title || "Custom Alarm"}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{r.message}</p>
+                        <p className="text-[10px] font-mono text-muted-foreground mt-1.5">
+                          {dateText} · {r.status}
+                        </p>
+                      </div>
+                      <div className="flex gap-1 shrink-0">
+                        <LoadingButton
+                          size="sm"
+                          variant="outline"
+                          className="h-8 w-8 p-0"
+                          loading={reminderActionId === r._id}
+                          onClick={() => void reminderAct(r._id, { status: r.status === "paused" ? "active" : "paused" })}
+                        >
+                          {r.status === "paused" ? <Play className="h-3.5 w-3.5" /> : <Pause className="h-3.5 w-3.5" />}
+                        </LoadingButton>
+                        <LoadingButton
+                          size="sm"
+                          variant="ghost"
+                          className="h-8 w-8 p-0 hover:text-red-400"
+                          loading={reminderActionId === r._id}
+                          onClick={() => void removeReminder(r._id)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </LoadingButton>
+                      </div>
+                    </CardContent>
+                  </Card>
                 );
-              })
-            )}
-            {!loadingRm && (reminders?.length ?? 0) === 0 && (
-              <Card className="glass">
-                <CardContent className="py-12 text-center text-muted-foreground">
-                  No reminders yet. They are created automatically from deadlines and Telegram AI insights.
-                </CardContent>
-              </Card>
-            )}
-          </TabsContent>
-        </Tabs>
+              })}
+            </div>
+          </div>
+        )}
       </main>
     </>
   );
