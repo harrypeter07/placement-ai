@@ -18,7 +18,7 @@ export async function GET() {
       .from("reminders")
       .select("*, deadline:deadlines(*)")
       .eq("user_id", user.id)
-      .contains("channels", ["phoneCall"])
+      .or("channels.cs.{phoneCall},channels.cs.{phone_call},offset_preset.eq.call,reminder_style.eq.aggressive")
       .order("scheduled_at", { ascending: false });
 
     if (error) {
@@ -77,18 +77,22 @@ export async function PATCH(req: Request) {
     if (formFillStatus !== undefined) updatePayload.form_fill_status = formFillStatus;
 
     if (scheduledAt !== undefined) {
-      updatePayload.scheduled_at = scheduledAt;
+      updatePayload.scheduled_at = new Date(scheduledAt).toISOString();
       updatePayload.sent = false;
+      updatePayload.enabled = true;
       updatePayload.status = "active";
       updatePayload.call_status = "pending";
       updatePayload.call_response = null;
+      updatePayload.channels = ["phoneCall", "dashboard"];
     } else if (rescheduleOffsetHours !== undefined) {
       const newTime = new Date(Date.now() + Number(rescheduleOffsetHours) * 60 * 60 * 1000).toISOString();
       updatePayload.scheduled_at = newTime;
       updatePayload.sent = false;
+      updatePayload.enabled = true;
       updatePayload.status = "active";
       updatePayload.call_status = "pending";
       updatePayload.call_response = null;
+      updatePayload.channels = ["phoneCall", "dashboard"];
     }
 
     updatePayload.updated_at = new Date().toISOString();

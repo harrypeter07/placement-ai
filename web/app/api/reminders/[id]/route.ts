@@ -78,7 +78,14 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       case "edit":
         if (parsed.data.title != null) payload.title = parsed.data.title;
         if (parsed.data.message != null) payload.message = parsed.data.message;
-        if (parsed.data.scheduledAt) payload.scheduled_at = new Date(parsed.data.scheduledAt).toISOString();
+        if (parsed.data.scheduledAt) {
+          payload.scheduled_at = new Date(parsed.data.scheduledAt).toISOString();
+          payload.sent = false;
+          payload.status = "active";
+          payload.enabled = true;
+          payload.call_status = "pending";
+          payload.call_response = null;
+        }
         if (parsed.data.priority) payload.priority = parsed.data.priority;
         break;
     }

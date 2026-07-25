@@ -6,7 +6,7 @@ import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
 import {
   LayoutDashboard, Clock, Calendar, Bell, CheckCircle, FileText,
-  BarChart3, Settings, Sparkles, LogOut, Menu, X, AlarmClock, Zap, PhoneCall
+  BarChart3, Settings, Sparkles, LogOut, Menu, X, AlarmClock, Zap, PhoneCall, Smartphone
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { siteConfig } from "@/config/site";
@@ -64,6 +64,18 @@ export function DashboardSidebar() {
             <p className="text-xs text-muted-foreground truncate">{session?.user?.email}</p>
           </motion.div>
         </motion.div>
+        <div className="space-y-1 mb-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full justify-start text-xs bg-primary/10 border-primary/20 text-primary hover:bg-primary/20"
+            onClick={() => {
+              window.dispatchEvent(new CustomEvent("open-pwa-install-banner"));
+            }}
+          >
+            <Smartphone className="h-3.5 w-3.5 mr-2" /> Install App (PWA)
+          </Button>
+        </div>
         <Button
           variant="ghost"
           size="sm"
