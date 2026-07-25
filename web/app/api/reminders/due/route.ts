@@ -12,6 +12,8 @@ import {
 import { isQuietHoursNow } from "@/lib/reminders/quiet-hours";
 import { sendPushToUser } from "@/lib/firebase/send-push";
 
+import { processDueRemindersInternal } from "@/lib/reminders/due-processor";
+
 export const runtime = "nodejs";
 
 const actionSchema = z.object({
@@ -24,6 +26,12 @@ const actionSchema = z.object({
 export async function GET() {
   try {
     const user = await requireAuth();
+
+    // Trigger due reminder processing (places phone calls / push notifications for any due items)
+    void processDueRemindersInternal(user.id).catch((err) =>
+      console.error("[GET reminders/due] Background due processor error:", err)
+    );
+
     const now = new Date();
     const prefs = await getStudentPreferences(user.id);
 

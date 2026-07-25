@@ -80,7 +80,14 @@ export async function bulkStoreTelegramMessages(
       groupTitle,
       ...row,
     });
-    if (r.created) created++;
+    if (r.created && r.message) {
+      created++;
+      // Auto-extract placement deadlines & create calendar/call reminders
+      void import("@/lib/reminders/auto-setup")
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .then((m) => m.autoProcessNewMessage(r.message as any, groupId))
+        .catch((err) => console.error("[AutoProcess] Failed on bulk message:", err));
+    }
   }
   return { created, updated, total: rows.length };
 }

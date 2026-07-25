@@ -349,6 +349,19 @@ export default function NotificationsPage() {
     setGroupInsights([]);
     void loadMessages(groupId, false, analyzeLimit);
     void reloadGroupInsights(groupId);
+    // Background auto-fetch from Telegram if chat is opened
+    fetch("/api/telegram/messages/load", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ groupId, limit: analyzeLimit }),
+    })
+      .then((r) => r.json())
+      .then((d) => {
+        if (d.fetched > 0) {
+          void loadMessages(groupId, true, analyzeLimit);
+        }
+      })
+      .catch(() => undefined);
   }
 
   function backToGroups() {

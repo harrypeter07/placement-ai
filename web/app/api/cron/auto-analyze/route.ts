@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase";
 import { ensureMessagesForGroups } from "@/lib/telegram-ensure-messages";
 import { analyzeChatMessagesForInsights } from "@/lib/ai/chat-insights";
 import { applyChatInsightsForUser } from "@/lib/ai/apply-chat-insights";
+import { processDueRemindersInternal } from "@/lib/reminders/due-processor";
 
 export const runtime = "nodejs";
 export const maxDuration = 60; // Allow up to 1 minute
@@ -127,9 +128,13 @@ async function handleAutoAnalyze(req: Request) {
       });
     }
 
+    // Also process any due reminders and dispatch phone calls / push alerts
+    const dueResult = await processDueRemindersInternal();
+
     return NextResponse.json({
       ok: true,
       processedCount: processedUsers.length,
+      dueRemindersProcessed: dueResult.count,
       details: processedUsers,
     });
   } catch (err) {
