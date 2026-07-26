@@ -374,26 +374,9 @@ export default function NotificationsPage() {
       <DashboardHeader title="Notifications" />
       <main className="p-4 lg:p-8">
         <div className="flex flex-wrap gap-2 mb-4 items-center justify-between">
-          <div className="flex gap-2 flex-wrap">
-            <Button
-              variant={tab === "chats" ? "default" : "outline"}
-              size="sm"
-              onClick={() => {
-                setTab("chats");
-                backToGroups();
-              }}
-            >
-              <MessageSquare className="h-4 w-4 mr-1" /> Chats
-            </Button>
-            <Button variant={tab === "alerts" ? "default" : "outline"} size="sm" onClick={() => setTab("alerts")}>
-              <Bell className="h-4 w-4 mr-1" /> Alerts
-              {systemNotifs.filter((n) => !n.read).length > 0 && (
-                <Badge variant="critical" className="ml-2 h-5 px-1.5">
-                  {systemNotifs.filter((n) => !n.read).length}
-                </Badge>
-              )}
-            </Button>
-          </div>
+          <h1 className="text-lg font-semibold text-foreground flex items-center gap-2">
+            <MessageSquare className="h-5 w-5 text-primary" /> Telegram Group & Channel Notifications
+          </h1>
           <div className="flex gap-2 flex-wrap">
             <LoadingButton
               variant="outline"
@@ -414,33 +397,7 @@ export default function NotificationsPage() {
           </div>
         </div>
 
-        {tab === "alerts" ? (
-          <div className="space-y-3 max-w-2xl">
-            {systemNotifs.length === 0 ? (
-              <Card className="glass">
-                <CardContent className="py-12 text-center text-muted-foreground">
-                  <Bell className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                  No system alerts
-                </CardContent>
-              </Card>
-            ) : (
-              systemNotifs.map((n) => (
-                <Card key={n._id} className={cn("glass", !n.read && "border-primary/30")}>
-                  <CardContent className="p-4">
-                    <div className="flex justify-between gap-2">
-                      <p className="font-medium">{n.title}</p>
-                      <Badge variant="outline">{n.type}</Badge>
-                    </div>
-                    <p className="text-sm text-muted-foreground mt-1">{n.message}</p>
-                    <p className="text-xs text-muted-foreground mt-2">{formatDate(n.createdAt)}</p>
-                  </CardContent>
-                </Card>
-              ))
-            )}
-          </div>
-        ) : (
-          <>
-          <Card className="glass border-primary/20 mb-4">
+        <Card className="glass border-primary/20 mb-4">
             <CardContent className="p-4 flex gap-3 text-sm">
               <Info className="h-5 w-5 text-primary shrink-0 mt-0.5" />
               <div className="text-muted-foreground space-y-1">
@@ -752,8 +709,6 @@ export default function NotificationsPage() {
               )}
             </Card>
           </div>
-          </>
-        )}
       </main>
     </>
   );
