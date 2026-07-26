@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import { DashboardHeader } from "@/components/dashboard/sidebar";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -22,6 +22,11 @@ import {
   XCircle,
   Save,
   Loader2,
+  ChevronDown,
+  ChevronRight,
+  Calendar,
+  Filter,
+  Layers,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -66,6 +71,32 @@ type Prefs = {
   };
 };
 
+type GroupedCallEvent = {
+  key: string;
+  company: string;
+  role: string;
+  calls: CallLogItem[];
+  nextCallTime: string;
+  statusCount: {
+    pending: number;
+    called: number;
+    missed: number;
+    failed: number;
+  };
+};
+
+function formatCallTimeDisplay(item: CallLogItem) {
+  if (!item.scheduledAt) return item.callTime || "09:00 AM";
+  const d = new Date(item.scheduledAt);
+  if (isNaN(d.getTime())) return item.callTime || "09:00 AM";
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: true });
+}
+
+function formatCallDateDisplay(item: CallLogItem) {
+  const dateVal = item.deadline?.deadlineDate || item.scheduledAt;
+  return formatDate(dateVal);
+}
+
 export default function CallAlertsPage() {
   const [calls, setCalls] = useState<CallLogItem[]>([]);
   const [prefs, setPrefs] = useState<Prefs | null>(null);
@@ -77,6 +108,10 @@ export default function CallAlertsPage() {
   const [activeCallSid, setActiveCallSid] = useState<string | null>(null);
   const [activeCallStatus, setActiveCallStatus] = useState<string | null>(null);
   const [activeCallTracking, setActiveCallTracking] = useState(false);
+
+  // Group expansion state & Date filter state
+  const [expandedEventIds, setExpandedEventIds] = useState<Set<string>>(new Set());
+  const [timeFilter, setTimeFilter] = useState<"all" | "today" | "this_week" | "this_month">("all");
 
   const startCallPolling = (sid: string) => {
     setActiveCallSid(sid);
@@ -184,20 +219,105 @@ export default function CallAlertsPage() {
     }
   };
 
-  const updateCallStatus = async (id: string, updates: Partial<CallLogItem>) => {
+  const updateCallStatus = async (id: string, updates: Partial<CallLogItem> & { rescheduleOffsetHours?: number }) => {
     try {
       const res = await fetch("/api/calls", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id, ...updates }),
       });
-      if (!res.ok) throw new Error("Failed to update status");
-      toast.success("Call status updated");
+      if (!res.ok) throw new Error("Failed to update call status");
+      toast.success("Call alert updated");
       void fetchCallsAndSettings();
     } catch (e: any) {
-      toast.error(e.message || "Failed to update status");
+      toast.error(e.message || "Failed to update call status");
     }
   };
+
+  const toggleEventExpansion = (key: string) => {
+    setExpandedEventIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  // Time filter logic
+  const filteredCalls = calls.filter((item) => {
+    if (timeFilter === "all") return true;
+    const targetTime = item.scheduledAt ? new Date(item.scheduledAt).getTime() : 0;
+    if (!targetTime) return true;
+
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const todayEnd = todayStart + 24 * 60 * 60 * 1000 - 1;
+
+    if (timeFilter === "today") {
+      return targetTime >= todayStart && targetTime <= todayEnd;
+    }
+
+    if (timeFilter === "this_week") {
+      const dayOfWeek = now.getDay();
+      const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - dayOfWeek).getTime();
+      const weekEnd = weekStart + 7 * 24 * 60 * 60 * 1000 - 1;
+      return targetTime >= weekStart && targetTime <= weekEnd;
+    }
+
+    if (timeFilter === "this_month") {
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59).getTime();
+      return targetTime >= monthStart && targetTime <= monthEnd;
+    }
+
+    return true;
+  });
+
+  // Group calls by Opportunity / Company Name & Sort Date-Wise (Closest Date First)
+  const groupedEvents: GroupedCallEvent[] = (() => {
+    const map = new Map<string, GroupedCallEvent>();
+
+    for (const c of filteredCalls) {
+      const rawCompany = c.deadline?.company || c.title || "Custom Alert";
+      // Normalize opportunity name (e.g. "Adobe : Engineer" -> "Adobe")
+      const company = rawCompany.split(/[:\-\–]/)[0].trim();
+      const role = c.deadline?.role || (c.title.includes(":") ? c.title.split(":")[1].trim() : c.title) || "Call Alert";
+      const key = company.toLowerCase();
+
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          company,
+          role,
+          calls: [],
+          nextCallTime: c.scheduledAt,
+          statusCount: { pending: 0, called: 0, missed: 0, failed: 0 },
+        });
+      }
+
+      const group = map.get(key)!;
+      group.calls.push(c);
+      const st = c.callStatus || "pending";
+      group.statusCount[st] = (group.statusCount[st] || 0) + 1;
+
+      // Find earliest scheduled call time for date-wise sorting
+      if (new Date(c.scheduledAt).getTime() < new Date(group.nextCallTime).getTime()) {
+        group.nextCallTime = c.scheduledAt;
+      }
+    }
+
+    // Sort calls within each group by scheduledAt (closest call date first)
+    for (const group of map.values()) {
+      group.calls.sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime());
+    }
+
+    // Sort groups date-wise: closest upcoming call date on top!
+    return Array.from(map.values()).sort((a, b) => {
+      const tA = new Date(a.nextCallTime).getTime() || 0;
+      const tB = new Date(b.nextCallTime).getTime() || 0;
+      return tA - tB;
+    });
+  })();
 
   return (
     <>
@@ -227,154 +347,296 @@ export default function CallAlertsPage() {
                   </Button>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {calls.length === 0 ? (
+                  {/* Time Range Filter Buttons */}
+                  <div className="flex items-center justify-between gap-2 flex-wrap pb-3 border-b border-white/10">
+                    <div className="flex items-center gap-2">
+                      <Filter className="h-4 w-4 text-primary shrink-0" />
+                      <span className="text-xs font-semibold text-foreground uppercase tracking-wider">Date Filters:</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {(
+                        [
+                          { key: "all", label: "All Schedules" },
+                          { key: "today", label: "Today" },
+                          { key: "this_week", label: "This Week" },
+                          { key: "this_month", label: "This Month" },
+                        ] as const
+                      ).map((btn) => (
+                        <Button
+                          key={btn.key}
+                          size="sm"
+                          variant={timeFilter === btn.key ? "default" : "outline"}
+                          className={cn(
+                            "h-7 text-xs font-medium px-3",
+                            timeFilter === btn.key ? "shadow-md bg-primary text-primary-foreground font-semibold" : "border-white/10 hover:bg-white/5"
+                          )}
+                          onClick={() => setTimeFilter(btn.key)}
+                        >
+                          {btn.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {groupedEvents.length === 0 ? (
                     <div className="text-center py-12 text-muted-foreground border border-dashed border-white/10 rounded-lg">
                       <PhoneCall className="h-10 w-10 mx-auto mb-3 opacity-30 text-primary" />
-                      <p className="text-sm font-medium">No call alerts scheduled yet.</p>
+                      <p className="text-sm font-medium">No call alerts match your filter.</p>
                       <p className="text-xs max-w-xs mx-auto mt-1 opacity-70">
                         Analyze chat messages or set placement deadlines to schedule calls.
                       </p>
                     </div>
                   ) : (
-                    <div className="overflow-x-auto rounded-lg border border-white/5 bg-black/10">
+                    <div className="overflow-x-auto rounded-lg border border-white/10 bg-black/20">
                       <table className="w-full text-sm text-left">
-                        <thead className="bg-white/5 text-xs uppercase text-muted-foreground border-b border-white/5">
+                        <thead className="bg-white/5 text-xs uppercase text-muted-foreground border-b border-white/10">
                           <tr>
                             <th className="px-4 py-3">Company & Role</th>
-                            <th className="px-4 py-3">Call Time</th>
+                            <th className="px-4 py-3">Next Call Time</th>
                             <th className="px-4 py-3">Status</th>
-                            <th className="px-4 py-3">Call Response</th>
-                            <th className="px-4 py-3">Form Fill</th>
+                            <th className="px-4 py-3">Schedules</th>
                             <th className="px-4 py-3 text-right">Actions</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-white/5">
-                          {calls.map((c) => {
-                            const dateStr = c.deadline?.deadlineDate
-                              ? formatDate(c.deadline.deadlineDate)
-                              : formatDate(c.scheduledAt);
+                          {groupedEvents.map((group) => {
+                            const isExpanded = expandedEventIds.has(group.key);
+                            const totalCount = group.calls.length;
+                            const pendingCount = group.statusCount.pending || 0;
+                            const calledCount = group.statusCount.called || 0;
 
                             return (
-                              <tr key={c.id} className="hover:bg-white/5 transition-colors">
-                                <td className="px-4 py-3.5">
-                                  <div className="font-semibold text-foreground">
-                                    {c.deadline?.company || "Custom Alert"}
-                                  </div>
-                                  <div className="text-xs text-muted-foreground">
-                                    {c.deadline?.role || c.title}
-                                  </div>
-                                </td>
-                                <td className="px-4 py-3.5">
-                                  <div className="flex items-center gap-1">
-                                    <Clock className="h-3.5 w-3.5 text-primary" />
-                                    <span>{c.callTime || "09:00"}</span>
-                                  </div>
-                                  <div className="text-[10px] text-muted-foreground">{dateStr}</div>
-                                </td>
-                                <td className="px-4 py-3.5">
-                                  {c.callStatus === "called" && (
-                                    <Badge variant="success" className="gap-1">
-                                      <CheckCircle className="h-3 w-3" /> Called
-                                    </Badge>
+                              <React.Fragment key={group.key}>
+                                {/* Top-Level Single Cell Row per Company */}
+                                <tr
+                                  className={cn(
+                                    "hover:bg-white/5 transition-colors cursor-pointer select-none",
+                                    isExpanded && "bg-primary/10 border-l-2 border-l-primary"
                                   )}
-                                  {c.callStatus === "pending" && (
-                                    <Badge variant="warning" className="gap-1">
-                                      <Clock className="h-3 w-3" /> Scheduled
-                                    </Badge>
-                                  )}
-                                  {c.callStatus === "missed" && (
-                                    <Badge variant="destructive" className="gap-1">
-                                      <AlertTriangle className="h-3 w-3" /> Missed
-                                    </Badge>
-                                  )}
-                                  {c.callStatus === "failed" && (
-                                    <Badge variant="outline" className="gap-1 border-red-500 text-red-400">
-                                      <XCircle className="h-3 w-3" /> Failed
-                                    </Badge>
-                                  )}
-                                </td>
-                                <td className="px-4 py-3.5">
-                                  {c.callResponse ? (
-                                    <Select
-                                      value={c.callResponse}
-                                      onValueChange={(val) =>
-                                        updateCallStatus(c.id, { callResponse: val })
-                                      }
-                                    >
-                                      <SelectTrigger className="h-7 text-xs bg-transparent border-white/10 w-28">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="acknowledged">Acknowledged</SelectItem>
-                                        <SelectItem value="snoozed">Snoozed</SelectItem>
-                                        <SelectItem value="fill_form">Fill Form (CTC)</SelectItem>
-                                        <SelectItem value="dismiss">Dismissed</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                  ) : (
-                                    <span className="text-xs text-muted-foreground">—</span>
-                                  )}
-                                </td>
-                                <td className="px-4 py-3.5">
-                                  {c.callResponse === "fill_form" || c.formFillStatus ? (
-                                    <Select
-                                      value={c.formFillStatus || "pending"}
-                                      onValueChange={(val) =>
-                                        updateCallStatus(c.id, { formFillStatus: val as any })
-                                      }
-                                    >
-                                      <SelectTrigger className="h-7 text-xs bg-transparent border-white/10 w-24">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="pending">Pending</SelectItem>
-                                        <SelectItem value="filled">Filled</SelectItem>
-                                        <SelectItem value="failed">Failed</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                  ) : (
-                                    <span className="text-xs text-muted-foreground">—</span>
-                                  )}
-                                </td>
-                                <td className="px-4 py-3.5 text-right">
-                                  <div className="flex justify-end items-center gap-2">
+                                  onClick={() => toggleEventExpansion(group.key)}
+                                >
+                                  <td className="px-4 py-3.5">
+                                    <div className="flex items-center gap-2.5">
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-6 w-6 text-muted-foreground shrink-0 p-0 hover:bg-transparent"
+                                      >
+                                        {isExpanded ? (
+                                          <ChevronDown className="h-4 w-4 text-primary" />
+                                        ) : (
+                                          <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                                        )}
+                                      </Button>
+                                      <div>
+                                        <div className="font-semibold text-foreground flex items-center gap-2">
+                                          <span>{group.company}</span>
+                                          <Badge variant="outline" className="text-[10px] h-4 px-1.5 border-white/15">
+                                            <Layers className="h-2.5 w-2.5 mr-1 text-primary" />
+                                            {totalCount} {totalCount === 1 ? "call" : "calls"}
+                                          </Badge>
+                                        </div>
+                                        <div className="text-xs text-muted-foreground">
+                                          {group.role}
+                                        </div>
+                                      </div>
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-3.5">
+                                    <div className="flex items-center gap-1.5 font-medium text-foreground text-xs">
+                                      <Clock className="h-3.5 w-3.5 text-primary shrink-0" />
+                                      <span>{formatCallTimeDisplay(group.calls[0])}</span>
+                                    </div>
+                                    <div className="text-[10px] text-muted-foreground flex items-center gap-1 mt-0.5">
+                                      <Calendar className="h-3 w-3 opacity-60 shrink-0" />
+                                      <span>{formatCallDateDisplay(group.calls[0])}</span>
+                                    </div>
+                                  </td>
+                                  <td className="px-4 py-3.5">
+                                    {calledCount > 0 ? (
+                                      <Badge variant="success" className="gap-1 text-xs">
+                                        <CheckCircle className="h-3 w-3" /> Called ({calledCount}/{totalCount})
+                                      </Badge>
+                                    ) : (
+                                      <Badge variant="warning" className="gap-1 text-xs">
+                                        <Clock className="h-3 w-3" /> Scheduled ({pendingCount})
+                                      </Badge>
+                                    )}
+                                  </td>
+                                  <td className="px-4 py-3.5">
+                                    <span className="text-xs font-semibold text-foreground">
+                                      {totalCount} Call {totalCount === 1 ? "Alert" : "Alerts"} Set
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3.5 text-right">
                                     <Button
-                                      variant="outline"
+                                      variant={isExpanded ? "default" : "outline"}
                                       size="sm"
-                                      className="h-8 text-xs bg-primary/10 border-primary/20 text-primary hover:bg-primary/20"
-                                      disabled={testingCallId === c.id}
-                                      onClick={() => triggerCallAlertTest(c.id)}
-                                    >
-                                      {testingCallId === c.id ? (
-                                        <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                                      ) : (
-                                        <Play className="h-3 w-3 mr-1" />
-                                      )}
-                                      Call Now
-                                    </Button>
-                                    <Select
-                                      onValueChange={(val) => {
-                                        if (val === "custom") {
-                                          setRescheduleModalId(c.id);
-                                        } else {
-                                          void updateCallStatus(c.id, { rescheduleOffsetHours: Number(val) } as any);
-                                        }
+                                      className="h-7 text-xs gap-1"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        toggleEventExpansion(group.key);
                                       }}
                                     >
-                                      <SelectTrigger className="h-8 text-xs bg-transparent border-white/10 w-28">
-                                        <SelectValue placeholder="Reschedule" />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="1">⏳ +1 Hour</SelectItem>
-                                        <SelectItem value="2">⏳ +2 Hours</SelectItem>
-                                        <SelectItem value="4">⏳ +4 Hours</SelectItem>
-                                        <SelectItem value="24">📅 +1 Day</SelectItem>
-                                        <SelectItem value="custom">✏️ Custom Time</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                </td>
-                              </tr>
+                                      {isExpanded ? (
+                                        <>
+                                          <ChevronDown className="h-3 w-3" /> Hide Schedules
+                                        </>
+                                      ) : (
+                                        <>
+                                          <ChevronRight className="h-3 w-3" /> View Schedules ({totalCount})
+                                        </>
+                                      )}
+                                    </Button>
+                                  </td>
+                                </tr>
+
+                                {/* Expanded Sub-Table containing all set call schedules for this company */}
+                                {isExpanded && (
+                                  <tr className="bg-zinc-950/90 border-b border-white/10">
+                                    <td colSpan={5} className="p-4">
+                                      <div className="rounded-lg border border-zinc-800 bg-black/60 p-3 space-y-2">
+                                        <div className="text-xs font-semibold text-primary flex items-center gap-1.5 pb-1 border-b border-white/10">
+                                          <Layers className="h-3.5 w-3.5" />
+                                          <span>Multiple Call Timings & Dates Set for {group.company}</span>
+                                        </div>
+                                        <div className="overflow-x-auto rounded-md border border-white/10">
+                                          <table className="w-full text-xs text-left">
+                                            <thead className="bg-zinc-900 text-muted-foreground uppercase border-b border-white/10">
+                                              <tr>
+                                                <th className="px-3 py-2">Call Date & Time</th>
+                                                <th className="px-3 py-2">Status</th>
+                                                <th className="px-3 py-2">Call Response</th>
+                                                <th className="px-3 py-2">Form Fill</th>
+                                                <th className="px-3 py-2 text-right">Actions</th>
+                                              </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-white/5">
+                                              {group.calls.map((c) => (
+                                                <tr key={c.id} className="hover:bg-white/5 transition-colors">
+                                                  <td className="px-3 py-2.5">
+                                                    <div className="font-medium text-foreground flex items-center gap-1.5">
+                                                      <Clock className="h-3.5 w-3.5 text-primary shrink-0" />
+                                                      <span>{formatCallTimeDisplay(c)}</span>
+                                                    </div>
+                                                    <div className="text-[10px] text-muted-foreground flex items-center gap-1 mt-0.5">
+                                                      <Calendar className="h-3 w-3 opacity-60 shrink-0" />
+                                                      <span>{formatCallDateDisplay(c)}</span>
+                                                    </div>
+                                                  </td>
+                                                  <td className="px-3 py-2.5">
+                                                    {c.callStatus === "called" && (
+                                                      <Badge variant="success" className="gap-1 text-[10px]">
+                                                        <CheckCircle className="h-3 w-3" /> Called
+                                                      </Badge>
+                                                    )}
+                                                    {c.callStatus === "pending" && (
+                                                      <Badge variant="warning" className="gap-1 text-[10px]">
+                                                        <Clock className="h-3 w-3" /> Scheduled
+                                                      </Badge>
+                                                    )}
+                                                    {c.callStatus === "missed" && (
+                                                      <Badge variant="destructive" className="gap-1 text-[10px]">
+                                                        <AlertTriangle className="h-3 w-3" /> Missed
+                                                      </Badge>
+                                                    )}
+                                                    {c.callStatus === "failed" && (
+                                                      <Badge variant="outline" className="gap-1 border-red-500 text-red-400 text-[10px]">
+                                                        <XCircle className="h-3 w-3" /> Failed
+                                                      </Badge>
+                                                    )}
+                                                  </td>
+                                                  <td className="px-3 py-2.5">
+                                                    {c.callResponse ? (
+                                                      <Select
+                                                        value={c.callResponse}
+                                                        onValueChange={(val) =>
+                                                          updateCallStatus(c.id, { callResponse: val })
+                                                        }
+                                                      >
+                                                        <SelectTrigger className="h-7 text-xs bg-zinc-900 border-zinc-700 w-28">
+                                                          <SelectValue />
+                                                        </SelectTrigger>
+                                                        <SelectContent className="bg-zinc-950 border-zinc-800 shadow-2xl z-50">
+                                                          <SelectItem value="acknowledged">Acknowledged</SelectItem>
+                                                          <SelectItem value="snoozed">Snoozed</SelectItem>
+                                                          <SelectItem value="fill_form">Fill Form (CTC)</SelectItem>
+                                                          <SelectItem value="dismiss">Dismissed</SelectItem>
+                                                        </SelectContent>
+                                                      </Select>
+                                                    ) : (
+                                                      <span className="text-[10px] text-muted-foreground">—</span>
+                                                    )}
+                                                  </td>
+                                                  <td className="px-3 py-2.5">
+                                                    {c.callResponse === "fill_form" || c.formFillStatus ? (
+                                                      <Select
+                                                        value={c.formFillStatus || "pending"}
+                                                        onValueChange={(val) =>
+                                                          updateCallStatus(c.id, { formFillStatus: val as any })
+                                                        }
+                                                      >
+                                                        <SelectTrigger className="h-7 text-xs bg-zinc-900 border-zinc-700 w-24">
+                                                          <SelectValue />
+                                                        </SelectTrigger>
+                                                        <SelectContent className="bg-zinc-950 border-zinc-800 shadow-2xl z-50">
+                                                          <SelectItem value="pending">Pending</SelectItem>
+                                                          <SelectItem value="filled">Filled</SelectItem>
+                                                          <SelectItem value="failed">Failed</SelectItem>
+                                                        </SelectContent>
+                                                      </Select>
+                                                    ) : (
+                                                      <span className="text-[10px] text-muted-foreground">—</span>
+                                                    )}
+                                                  </td>
+                                                  <td className="px-3 py-2.5 text-right">
+                                                    <div className="flex justify-end items-center gap-1.5">
+                                                      <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        className="h-7 text-xs bg-primary/10 border-primary/20 text-primary hover:bg-primary/20"
+                                                        disabled={testingCallId === c.id}
+                                                        onClick={() => triggerCallAlertTest(c.id)}
+                                                      >
+                                                        {testingCallId === c.id ? (
+                                                          <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                                        ) : (
+                                                          <Play className="h-3 w-3 mr-1" />
+                                                        )}
+                                                        Call Now
+                                                      </Button>
+                                                      <Select
+                                                        onValueChange={(val) => {
+                                                          if (val === "custom") {
+                                                            setRescheduleModalId(c.id);
+                                                          } else {
+                                                            void updateCallStatus(c.id, { rescheduleOffsetHours: Number(val) });
+                                                          }
+                                                        }}
+                                                      >
+                                                        <SelectTrigger className="h-7 text-xs bg-zinc-900 border-zinc-700 w-28">
+                                                          <SelectValue placeholder="Reschedule" />
+                                                        </SelectTrigger>
+                                                        <SelectContent className="bg-zinc-950 border-zinc-800 shadow-2xl z-50">
+                                                          <SelectItem value="1">⏳ +1 Hour</SelectItem>
+                                                          <SelectItem value="2">⏳ +2 Hours</SelectItem>
+                                                          <SelectItem value="4">⏳ +4 Hours</SelectItem>
+                                                          <SelectItem value="24">📅 +1 Day</SelectItem>
+                                                          <SelectItem value="custom">📅 Custom Calendar</SelectItem>
+                                                        </SelectContent>
+                                                      </Select>
+                                                    </div>
+                                                  </td>
+                                                </tr>
+                                              ))}
+                                            </tbody>
+                                          </table>
+                                        </div>
+                                      </div>
+                                    </td>
+                                  </tr>
+                                )}
+                              </React.Fragment>
                             );
                           })}
                         </tbody>
@@ -499,10 +761,10 @@ export default function CallAlertsPage() {
                             updateSettingField(["twilioVoiceSettings", "voice"], val)
                           }
                         >
-                          <SelectTrigger className="w-full">
+                          <SelectTrigger className="w-full bg-zinc-900 border-zinc-700">
                             <SelectValue />
                           </SelectTrigger>
-                          <SelectContent>
+                          <SelectContent className="bg-zinc-950 border-zinc-800 shadow-2xl z-50">
                             <SelectItem value="Polly.Kajal-Neural">Kajal (Neural, India)</SelectItem>
                             <SelectItem value="Polly.Aditi-Standard">Aditi (Standard, India)</SelectItem>
                             <SelectItem value="Polly.Joanna-Neural">Joanna (Neural, US)</SelectItem>
@@ -567,20 +829,71 @@ export default function CallAlertsPage() {
             </div>
           </div>
         )}
-        
+
+        {/* Modern Calendar Picker Reschedule Modal */}
         {rescheduleModalId && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-            <div className="bg-zinc-950 border border-white/10 rounded-xl max-w-md w-full p-6 space-y-4 shadow-2xl">
-              <h3 className="text-lg font-semibold text-foreground">Select Call Reschedule Time</h3>
-              <p className="text-xs text-muted-foreground">Choose a specific date and time to trigger this voice alarm reminder.</p>
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in-0">
+            <div className="bg-zinc-950 border border-zinc-800 rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-primary/10 rounded-xl border border-primary/20 text-primary">
+                  <Calendar className="h-5 w-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-semibold text-foreground">Pick Reschedule Calendar Date</h3>
+                  <p className="text-xs text-muted-foreground">Select a custom date and time for this call alert.</p>
+                </div>
+              </div>
+
+              {/* Quick Presets */}
+              <div className="space-y-1.5">
+                <Label className="text-xs text-muted-foreground font-medium">Quick Presets</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs bg-zinc-900 border-zinc-800"
+                    onClick={() => {
+                      const d = new Date(Date.now() + 60 * 60 * 1000);
+                      setCustomDateTime(d.toISOString().slice(0, 16));
+                    }}
+                  >
+                    +1 Hour
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs bg-zinc-900 border-zinc-800"
+                    onClick={() => {
+                      const d = new Date(Date.now() + 2 * 60 * 60 * 1000);
+                      setCustomDateTime(d.toISOString().slice(0, 16));
+                    }}
+                  >
+                    +2 Hours
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs bg-zinc-900 border-zinc-800"
+                    onClick={() => {
+                      const d = new Date(Date.now() + 24 * 60 * 60 * 1000);
+                      setCustomDateTime(d.toISOString().slice(0, 16));
+                    }}
+                  >
+                    +1 Day
+                  </Button>
+                </div>
+              </div>
               
               <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground font-medium">Reschedule Date & Time</Label>
+                <Label className="text-xs text-muted-foreground font-medium">Select Date & Time</Label>
                 <Input 
                   type="datetime-local" 
                   value={customDateTime}
                   onChange={(e) => setCustomDateTime(e.target.value)}
-                  className="w-full bg-black/40 border border-white/10 rounded px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary"
+                  className="w-full bg-zinc-900 border-zinc-800 rounded-xl px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary font-mono"
                 />
               </div>
 
@@ -604,12 +917,12 @@ export default function CallAlertsPage() {
                       return;
                     }
                     const date = new Date(customDateTime);
-                    void updateCallStatus(rescheduleModalId, { scheduledAt: date.toISOString() } as any);
+                    void updateCallStatus(rescheduleModalId, { scheduledAt: date.toISOString() });
                     setRescheduleModalId(null);
                     setCustomDateTime("");
                   }}
                 >
-                  Reschedule
+                  Confirm Reschedule
                 </Button>
               </div>
             </div>
@@ -617,8 +930,8 @@ export default function CallAlertsPage() {
         )}
 
         {activeCallTracking && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
-            <div className="bg-zinc-950 border border-white/10 rounded-2xl max-w-sm w-full p-6 space-y-5 shadow-2xl text-center">
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4">
+            <div className="bg-zinc-950 border border-zinc-800 rounded-2xl max-w-sm w-full p-6 space-y-5 shadow-2xl text-center">
               <div className="mx-auto h-16 w-16 bg-primary/10 rounded-full flex items-center justify-center border border-primary/20 relative">
                 <PhoneCall className={cn(
                   "h-8 w-8 text-primary", 
