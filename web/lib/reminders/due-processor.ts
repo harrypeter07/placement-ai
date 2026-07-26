@@ -43,7 +43,6 @@ export async function processDueRemindersInternal(targetUserId?: string) {
         continue;
       }
 
-      // Check which notification channels are enabled
       const channels: string[] = reminder.channels || [];
       const isCallReminder =
         channels.includes("phoneCall") ||
@@ -51,7 +50,14 @@ export async function processDueRemindersInternal(targetUserId?: string) {
         reminder.offset_preset === "call" ||
         reminder.reminder_style === "aggressive";
 
-      const userWantsPhone = notificationsConfig.phoneCall !== false && isCallReminder;
+      // Place phone call if user hasn't disabled phone calls in settings OR if explicitly designated for calls/urgent
+      const userWantsPhone =
+        notificationsConfig.phoneCall !== false ||
+        isCallReminder ||
+        reminder.priority === "high" ||
+        reminder.priority === "critical" ||
+        reminder.escalation_level === "urgent" ||
+        reminder.escalation_level === "critical";
 
       // 1. Log inApp / dashboard notification
       await createNotificationLog({
