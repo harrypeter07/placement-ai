@@ -2,5 +2,15 @@
   "framework": "nextjs",
   "installCommand": "npm install",
   "buildCommand": "npm run build",
-  "regions": ["bom1"]
+  "regions": ["bom1"],
+  "crons": [
+    {
+      "path": "/api/cron/worker-ping",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/cron/auto-analyze",
+      "schedule": "* * * * *"
+    }
+  ]
 }

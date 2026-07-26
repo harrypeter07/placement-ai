@@ -101,7 +101,9 @@ export async function makeReminderPhoneCall(
   const language = voiceSettings.language || "en-IN";
 
   if (voiceSettings.menuEnabled) {
-    const callbackBase = `${process.env.WEB_APP_URL || "https://placemint-web.vercel.app"}/api/twilio/gather-callback`;
+    const rawAppUrl = process.env.NEXT_PUBLIC_APP_URL || process.env.WEB_APP_URL || "https://plarm.vercel.app";
+    const publicAppUrl = rawAppUrl.includes("localhost") ? "https://plarm.vercel.app" : rawAppUrl;
+    const callbackBase = `${publicAppUrl.replace(/\/$/, "")}/api/twilio/gather-callback`;
     const params = new URLSearchParams();
     if (reminderId) params.append("reminderId", reminderId);
     if (userId) params.append("userId", userId);
