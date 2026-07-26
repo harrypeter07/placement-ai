@@ -97,7 +97,7 @@ export function ReminderToastPoller() {
       setUrgent(null);
     }
 
-    const id = setInterval(tick, 45_000);
+    const id = setInterval(tick, 10_000);
     tick();
     return () => {
       cancelled = true;

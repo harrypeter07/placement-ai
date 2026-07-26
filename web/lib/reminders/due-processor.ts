@@ -20,13 +20,13 @@ export async function processDueRemindersInternal(targetUserId?: string) {
       // If filtering for a specific user
       if (targetUserId && userId !== targetUserId) continue;
 
-      const deadline = reminder.deadlines;
-
-      if (!deadline) {
-        // Orphaned reminder - mark sent to avoid loops
-        await markReminderSent(reminder.id, now);
-        continue;
-      }
+      const rawDeadline = reminder.deadlines || (reminder as Record<string, unknown>).deadline;
+      const deadline = rawDeadline || {
+        company: reminder.title ? reminder.title.split(":")[0].trim() : "PlaceMint Alert",
+        role: reminder.title && reminder.title.includes(":") ? reminder.title.split(":")[1].trim() : "Scheduled Call",
+        deadline_date: reminder.scheduled_at,
+        links: [],
+      };
 
       const prefs = await getStudentPreferences(userId);
       const notificationsConfig = prefs?.notifications_config || {};
