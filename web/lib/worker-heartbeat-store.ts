@@ -10,7 +10,6 @@ export interface WorkerHeartbeatSnapshot {
 }
 
 declare global {
-  // eslint-disable-next-line no-var
   var workerHeartbeatMemory: WorkerHeartbeatSnapshot | undefined;
 }
 

@@ -4,7 +4,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   ArrowLeft,
-  Bell,
   MessageSquare,
   Sparkles,
   Users,
@@ -21,7 +20,6 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Switch } from "@/components/ui/switch";
-import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { formatDate } from "@/lib/utils";
 import { cn } from "@/lib/utils";
@@ -66,6 +64,15 @@ interface SystemNotif {
   createdAt: string;
 }
 
+interface SystemNotif {
+  _id: string;
+  title: string;
+  message: string;
+  type: string;
+  read: boolean;
+  createdAt: string;
+}
+
 type PlacementInsight = InsightRow;
 
 export default function NotificationsPage() {
@@ -74,7 +81,6 @@ export default function NotificationsPage() {
   const [systemNotifs, setSystemNotifs] = useState<SystemNotif[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
   const [loadingMessages, setLoadingMessages] = useState(false);
-  const [tab, setTab] = useState<"chats" | "alerts">("chats");
   const [togglingGroupId, setTogglingGroupId] = useState<string | null>(null);
   const [groupSearch, setGroupSearch] = useState("");
   const [syncingCatalog, setSyncingCatalog] = useState(false);
@@ -264,7 +270,6 @@ export default function NotificationsPage() {
 
         if (groupId) {
           setGroupInsights(list);
-          setTab("chats");
           await loadMessages(groupId, false, analyzeLimit);
         }
       } catch (e) {
@@ -273,7 +278,7 @@ export default function NotificationsPage() {
         setAnalyzingGroup(false);
       }
     },
-    [cache, analyzeLimit]
+    [cache, analyzeLimit, loadMessages]
   );
 
   async function syncAllGroups() {
@@ -375,7 +380,12 @@ export default function NotificationsPage() {
       <main className="p-4 lg:p-8">
         <div className="flex flex-wrap gap-2 mb-4 items-center justify-between">
           <h1 className="text-lg font-semibold text-foreground flex items-center gap-2">
-            <MessageSquare className="h-5 w-5 text-primary" /> Telegram Group & Channel Notifications
+            <MessageSquare className="h-5 w-5 text-primary" /> Telegram Group &amp; Channel Notifications
+            {systemNotifs.length > 0 && (
+              <Badge variant="secondary" className="text-xs">
+                {systemNotifs.length} System Alerts
+              </Badge>
+            )}
           </h1>
           <div className="flex gap-2 flex-wrap">
             <LoadingButton

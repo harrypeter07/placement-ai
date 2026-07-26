@@ -17,9 +17,7 @@ import {
   SkipBack, 
   SkipForward, 
   Film, 
-  CheckCircle2, 
-  AlertCircle,
-  Calendar
+  CheckCircle2
 } from "lucide-react";
 import { DashboardHeader } from "@/components/dashboard/sidebar";
 import { InsightsAnalysisPanel, type InsightRow } from "@/components/telegram/insights-analysis-panel";

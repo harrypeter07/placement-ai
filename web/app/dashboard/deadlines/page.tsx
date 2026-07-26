@@ -71,12 +71,6 @@ const statusColors: Record<DeadlineStatus, "default" | "success" | "warning" | "
   interview_scheduled: "success",
 };
 
-function deadlineLabel(r: ReminderRow) {
-  const d = r.deadlineId;
-  if (d && typeof d === "object" && "company" in d) return `${d.company} — ${d.role}`;
-  return "Deadline";
-}
-
 function PlacementsContent() {
   const cache = useDashboardCache();
   const [search, setSearch] = useState("");

@@ -25,7 +25,6 @@ import {
   ChevronDown,
   ChevronRight,
   Calendar,
-  Filter,
   Layers,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -109,9 +108,10 @@ export default function CallAlertsPage() {
   const [activeCallStatus, setActiveCallStatus] = useState<string | null>(null);
   const [activeCallTracking, setActiveCallTracking] = useState(false);
 
-  // Group expansion state & Date filter state
+  // Group expansion state & Date/Status filter state
   const [expandedEventIds, setExpandedEventIds] = useState<Set<string>>(new Set());
   const [timeFilter, setTimeFilter] = useState<"all" | "today" | "this_week" | "this_month">("all");
+  const [statusFilterTab, setStatusFilterTab] = useState<"all" | "pending" | "completed">("all");
 
   const startCallPolling = (sid: string) => {
     setActiveCallSid(sid);
@@ -219,6 +219,17 @@ export default function CallAlertsPage() {
     }
   };
 
+  function toLocalDatetimeString(date: Date): string {
+    if (isNaN(date.getTime())) date = new Date();
+    const pad = (n: number) => String(n).padStart(2, "0");
+    const year = date.getFullYear();
+    const month = pad(date.getMonth() + 1);
+    const day = pad(date.getDate());
+    const hours = pad(date.getHours());
+    const minutes = pad(date.getMinutes());
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  }
+
   const updateCallStatus = async (id: string, updates: Partial<CallLogItem> & { rescheduleOffsetHours?: number }) => {
     try {
       const res = await fetch("/api/calls", {
@@ -243,8 +254,14 @@ export default function CallAlertsPage() {
     });
   };
 
-  // Time filter logic
+  // Time & Status filter logic
   const filteredCalls = calls.filter((item) => {
+    if (statusFilterTab === "pending" && item.callStatus === "called") {
+      return false;
+    }
+    if (statusFilterTab === "completed" && item.callStatus !== "called") {
+      return false;
+    }
     if (timeFilter === "all") return true;
     const targetTime = item.scheduledAt ? new Date(item.scheduledAt).getTime() : 0;
     if (!targetTime) return true;
@@ -347,16 +364,37 @@ export default function CallAlertsPage() {
                   </Button>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {/* Time Range Filter Buttons */}
-                  <div className="flex items-center justify-between gap-2 flex-wrap pb-3 border-b border-white/10">
-                    <div className="flex items-center gap-2">
-                      <Filter className="h-4 w-4 text-primary shrink-0" />
-                      <span className="text-xs font-semibold text-foreground uppercase tracking-wider">Date Filters:</span>
-                    </div>
+                  {/* Time & Status Filter Bar */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-white/10">
                     <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mr-1">Status:</span>
                       {(
                         [
-                          { key: "all", label: "All Schedules" },
+                          { key: "all", label: "All Calls" },
+                          { key: "pending", label: "⏳ Scheduled Only" },
+                          { key: "completed", label: "✅ Completed Calls" },
+                        ] as const
+                      ).map((btn) => (
+                        <Button
+                          key={btn.key}
+                          size="sm"
+                          variant={statusFilterTab === btn.key ? "default" : "outline"}
+                          className={cn(
+                            "h-7 text-xs font-medium px-3",
+                            statusFilterTab === btn.key ? "shadow-md bg-primary text-primary-foreground font-semibold" : "border-white/10 hover:bg-white/5"
+                          )}
+                          onClick={() => setStatusFilterTab(btn.key)}
+                        >
+                          {btn.label}
+                        </Button>
+                      ))}
+                    </div>
+                    
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mr-1">Date:</span>
+                      {(
+                        [
+                          { key: "all", label: "All Dates" },
                           { key: "today", label: "Today" },
                           { key: "this_week", label: "This Week" },
                           { key: "this_month", label: "This Month" },
@@ -608,6 +646,8 @@ export default function CallAlertsPage() {
                                                       <Select
                                                         onValueChange={(val) => {
                                                           if (val === "custom") {
+                                                            const initTime = c.scheduledAt ? new Date(c.scheduledAt) : new Date(Date.now() + 60 * 60 * 1000);
+                                                            setCustomDateTime(toLocalDatetimeString(initTime));
                                                             setRescheduleModalId(c.id);
                                                           } else {
                                                             void updateCallStatus(c.id, { rescheduleOffsetHours: Number(val) });
@@ -833,71 +873,122 @@ export default function CallAlertsPage() {
         {/* Modern Calendar Picker Reschedule Modal */}
         {rescheduleModalId && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in-0">
-            <div className="bg-zinc-950 border border-zinc-800 rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-primary/10 rounded-xl border border-primary/20 text-primary">
-                  <Calendar className="h-5 w-5" />
+            <div className="bg-zinc-950/95 border border-primary/30 rounded-2xl max-w-md w-full p-6 space-y-5 shadow-2xl">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-primary/10 rounded-xl border border-primary/20 text-primary">
+                    <Calendar className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-semibold text-foreground">Reschedule Call Alert</h3>
+                    <p className="text-xs text-muted-foreground">Pick a new call date &amp; time in your local timezone.</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-base font-semibold text-foreground">Pick Reschedule Calendar Date</h3>
-                  <p className="text-xs text-muted-foreground">Select a custom date and time for this call alert.</p>
-                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                  onClick={() => {
+                    setRescheduleModalId(null);
+                    setCustomDateTime("");
+                  }}
+                >
+                  <XCircle className="h-4 w-4" />
+                </Button>
               </div>
 
               {/* Quick Presets */}
-              <div className="space-y-1.5">
-                <Label className="text-xs text-muted-foreground font-medium">Quick Presets</Label>
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Quick Presets</Label>
                 <div className="grid grid-cols-3 gap-2">
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="h-8 text-xs bg-zinc-900 border-zinc-800"
+                    className="h-8 text-xs bg-zinc-900 border-zinc-800 hover:border-primary/50 hover:bg-primary/10"
+                    onClick={() => {
+                      const d = new Date(Date.now() + 15 * 60 * 1000);
+                      setCustomDateTime(toLocalDatetimeString(d));
+                    }}
+                  >
+                    ⚡ +15 Min
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs bg-zinc-900 border-zinc-800 hover:border-primary/50 hover:bg-primary/10"
+                    onClick={() => {
+                      const d = new Date(Date.now() + 30 * 60 * 1000);
+                      setCustomDateTime(toLocalDatetimeString(d));
+                    }}
+                  >
+                    ⏳ +30 Min
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs bg-zinc-900 border-zinc-800 hover:border-primary/50 hover:bg-primary/10"
                     onClick={() => {
                       const d = new Date(Date.now() + 60 * 60 * 1000);
-                      setCustomDateTime(d.toISOString().slice(0, 16));
+                      setCustomDateTime(toLocalDatetimeString(d));
                     }}
                   >
-                    +1 Hour
+                    🕐 +1 Hour
                   </Button>
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="h-8 text-xs bg-zinc-900 border-zinc-800"
+                    className="h-8 text-xs bg-zinc-900 border-zinc-800 hover:border-primary/50 hover:bg-primary/10"
                     onClick={() => {
                       const d = new Date(Date.now() + 2 * 60 * 60 * 1000);
-                      setCustomDateTime(d.toISOString().slice(0, 16));
+                      setCustomDateTime(toLocalDatetimeString(d));
                     }}
                   >
-                    +2 Hours
+                    ⏳ +2 Hours
                   </Button>
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    className="h-8 text-xs bg-zinc-900 border-zinc-800"
+                    className="h-8 text-xs bg-zinc-900 border-zinc-800 hover:border-primary/50 hover:bg-primary/10"
                     onClick={() => {
-                      const d = new Date(Date.now() + 24 * 60 * 60 * 1000);
-                      setCustomDateTime(d.toISOString().slice(0, 16));
+                      const tom = new Date();
+                      tom.setDate(tom.getDate() + 1);
+                      tom.setHours(9, 0, 0, 0);
+                      setCustomDateTime(toLocalDatetimeString(tom));
                     }}
                   >
-                    +1 Day
+                    📅 Tomorrow 9 AM
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs bg-zinc-900 border-zinc-800 hover:border-primary/50 hover:bg-primary/10"
+                    onClick={() => {
+                      const d2 = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000);
+                      setCustomDateTime(toLocalDatetimeString(d2));
+                    }}
+                  >
+                    📆 +2 Days
                   </Button>
                 </div>
               </div>
               
               <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground font-medium">Select Date & Time</Label>
+                <Label className="text-xs text-muted-foreground font-medium uppercase tracking-wider">Select Exact Date &amp; Time</Label>
                 <Input 
                   type="datetime-local" 
                   value={customDateTime}
                   onChange={(e) => setCustomDateTime(e.target.value)}
-                  className="w-full bg-zinc-900 border-zinc-800 rounded-xl px-3 py-2 text-sm text-foreground focus:outline-none focus:border-primary font-mono"
+                  className="w-full bg-zinc-900 border-zinc-800 rounded-xl px-3 py-2.5 text-sm text-foreground focus:outline-none focus:border-primary font-mono"
                 />
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex justify-end gap-2 pt-3 border-t border-white/10">
                 <Button 
                   variant="outline" 
                   size="sm" 

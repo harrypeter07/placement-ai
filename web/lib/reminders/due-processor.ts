@@ -102,7 +102,7 @@ export async function processDueRemindersInternal(targetUserId?: string) {
               destinationPhone,
               deadline.company,
               deadline.role,
-              new Date(deadline.deadline_date),
+              new Date(reminder.scheduled_at || deadline.deadline_date),
               userId,
               reminder.id,
               formUrl

@@ -82,7 +82,7 @@ export async function runFormJobFilling(job: any) {
   const fallbackServiceUrl = (process.env.PLAYWRIGHT_SERVICE_URL || "").replace(/\/$/, "");
   if (!fallbackServiceUrl) {
     // No Playwright fallback configured, fail the job
-    const updated = await updateFormJob(job.id, {
+    await updateFormJob(job.id, {
       status: "failed",
       error: "Google Form requires manual interaction or Playwright fallback service is not configured.",
     });

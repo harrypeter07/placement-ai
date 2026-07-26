@@ -79,7 +79,7 @@ export default function FormAutomatorPage() {
       } else {
         toast.error(data.error || "Submission failed", { id: toastId });
       }
-    } catch (err) {
+    } catch {
       toast.error("Network error while submitting", { id: toastId });
     } finally {
       setSubmittingConfirm(false);
@@ -155,7 +155,7 @@ export default function FormAutomatorPage() {
         const errData = await res.json();
         toast.error(errData.error || "Failed to trigger form auto-fill.");
       }
-    } catch (err) {
+    } catch {
       toast.error("An error occurred while submitting.");
     } finally {
       setSubmitLoading(false);
@@ -376,6 +376,7 @@ export default function FormAutomatorPage() {
           </DialogHeader>
           {selectedScreenshot && (
             <div className="mt-4 overflow-auto max-h-[70vh] rounded-lg border border-white/10">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
                 src={selectedScreenshot}
                 alt="Form verification screenshot"
@@ -430,6 +431,7 @@ export default function FormAutomatorPage() {
                 <div className="space-y-2">
                   <h4 className="text-sm font-semibold text-purple-300">Verification Screenshot:</h4>
                   <div className="rounded-lg border border-white/10 overflow-hidden max-h-[40vh] overflow-y-auto">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={reviewingJob.screenshot}
                       alt="Playwright verification screenshot"

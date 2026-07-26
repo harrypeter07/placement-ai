@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
 import {
   AlarmClock,
   Bell,
@@ -9,7 +8,6 @@ import {
   Clock,
   Flame,
   Loader2,
-  Pause,
   Sparkles,
 } from "lucide-react";
 import { DashboardHeader } from "@/components/dashboard/sidebar";
@@ -54,16 +52,6 @@ const levelColors: Record<string, string> = {
 
 function msUntil(iso: string) {
   return new Date(iso).getTime() - Date.now();
-}
-
-function countdown(iso: string) {
-  const ms = msUntil(iso);
-  if (ms <= 0) return "Due now";
-  const h = Math.floor(ms / 3_600_000);
-  const m = Math.floor((ms % 3_600_000) / 60_000);
-  if (h >= 48) return `${Math.floor(h / 24)}d left`;
-  if (h > 0) return `${h}h ${m}m`;
-  return `${m}m`;
 }
 
 export function ReminderHub() {

@@ -1,6 +1,6 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { IStudentPreferences } from "@/models/StudentPreferences";
-import { getGeminiApiKey, isGeminiConfigured } from "@/lib/ai/gemini-env";
+import { getGeminiApiKey } from "@/lib/ai/gemini-env";
 import { smartPlacementInsights } from "@/lib/ai/smart-placement-analysis";
 
 

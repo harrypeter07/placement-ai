@@ -295,7 +295,7 @@ export default function SettingsPage() {
       } else {
         toast.error(data.error || "Failed to trigger test call.", { id: toastId });
       }
-    } catch (err) {
+    } catch {
       toast.error("Network error while triggering test call.", { id: toastId });
     } finally {
       setTestingCall(false);
