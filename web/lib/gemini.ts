@@ -80,23 +80,36 @@ export async function extractPlacementFromText(text: string): Promise<ExtractedP
 function preprocessWithRegex(text: string): ExtractedPlacement {
   const linkRegex = /https?:\/\/[^\s]+/g;
   const links = text.match(linkRegex) || [];
-  const companyMatch = text.match(/(?:company|org|hiring)[:\s]+([A-Za-z0-9\s&.]+)/i);
+  
+  const knownCompanies = /Nutanix|Infosys|Varroc|Adobe|Stripe|Qualcomm|Stryker|LTM|IBM|Aspect Ratio|Videoo|FANUC|V-Guard|Loyalty Juggernaut|Eaton/i;
+  const companyMatch = text.match(knownCompanies) || text.match(/(?:company|org|hiring|drive|talk|test)[:\s]+([A-Za-z0-9\s&.]+)/i);
+  const company = companyMatch ? companyMatch[0] : "CDPC Placement Cell";
+
+  let role = "Placement Update";
+  if (/interview/i.test(text)) role = "Interview Process";
+  else if (/test|exam|assessment|coding/i.test(text)) role = "Online Assessment / Test";
+  else if (/ppt|talk|session/i.test(text)) role = "Pre-Placement Talk (PPT)";
+  else if (/shortlist|shortlisted/i.test(text)) role = "Shortlist Announcement";
+  else if (/hackathon|contest|competition/i.test(text)) role = "Hackathon / Competition";
+
   const cgpaMatch = text.match(/(\d+\.?\d*)\s*CGPA/i);
-  const dateMatch = text.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+  const dateMatch = text.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/) || text.match(/(\d{1,2})(?:st|nd|rd|th)?\s+(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s*(\d{4})?/i);
 
   let deadline = "";
   if (dateMatch) {
-    const [, d, m, y] = dateMatch;
-    const year = y.length === 2 ? `20${y}` : y;
-    deadline = new Date(`${year}-${m}-${d}`).toISOString();
+    try {
+      deadline = new Date(dateMatch[0]).toISOString();
+    } catch {
+      deadline = new Date(Date.now() + 3 * 86400000).toISOString();
+    }
   }
 
-  const placementKeywords = /placement|hiring|intern|apply|deadline|drive|recruit/i;
-  const confidence = placementKeywords.test(text) ? 0.6 : 0.1;
+  const placementKeywords = /placement|hiring|intern|apply|deadline|drive|recruit|test|interview|ppt|shortlist|notice/i;
+  const confidence = placementKeywords.test(text) ? 0.85 : 0.2;
 
   return {
-    company: companyMatch?.[1]?.trim() || "",
-    role: "",
+    company,
+    role,
     deadline,
     eligibility: cgpaMatch ? `Min CGPA: ${cgpaMatch[1]}` : "",
     type: /intern/i.test(text) ? "internship" : "full-time",

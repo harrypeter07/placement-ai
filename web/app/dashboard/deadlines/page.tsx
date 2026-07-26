@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Search,
@@ -12,7 +12,6 @@ import {
   Pause,
   Play,
   Trash2,
-  Sparkles,
 } from "lucide-react";
 import { DashboardHeader } from "@/components/dashboard/sidebar";
 import { LoadingButton } from "@/components/ui/loading-button";
@@ -39,6 +38,7 @@ interface Deadline {
   deadline: string;
   status: DeadlineStatus;
   eligibility: string;
+  salary?: string;
   links: string[];
   notes?: string;
   sourceMessageText?: string;
@@ -298,29 +298,75 @@ function PlacementsContent() {
               }) || [];
 
               return (
-                <Card key={d._id} className="glass glow-border">
-                  <CardContent className="p-4 flex flex-col gap-4">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                      <div className="flex-1 min-w-0">
+                <Card key={d._id} className="glass glow-border overflow-hidden transition-all duration-200">
+                  <CardContent className="p-4 sm:p-5 flex flex-col gap-4">
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                      <div className="flex-1 min-w-0 space-y-1.5">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <h3 className="font-semibold text-foreground text-base">{d.company}</h3>
+                          <h3 className="font-bold text-foreground text-base sm:text-lg">{d.company}</h3>
                           <Badge variant={statusColors[d.status]}>{d.status.replace("_", " ")}</Badge>
                           <Badge variant={urgency === "critical" ? "critical" : "outline"}>
                             {formatRelative(d.deadline)}
                           </Badge>
+                          {d.salary && (
+                            <Badge variant="outline" className="text-[10px] bg-emerald-500/10 text-emerald-300 border-emerald-500/30 font-mono">
+                              💰 {d.salary}
+                            </Badge>
+                          )}
                         </div>
-                        <p className="text-sm text-muted-foreground mt-0.5">{d.role}</p>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Due {formatDate(d.deadline)}
-                        </p>
-                        {d.sourceMessageText && (
-                          <div className="mt-2 text-[11px] text-muted-foreground bg-black/10 p-2.5 rounded-lg border border-white/5 whitespace-pre-wrap max-h-24 overflow-y-auto">
-                            <strong className="text-foreground">Source Message:</strong>
-                            <p className="mt-1 font-mono opacity-85 leading-relaxed">{d.sourceMessageText}</p>
+
+                        <p className="text-sm font-medium text-foreground/90">{d.role}</p>
+
+                        <div className="flex items-center gap-4 text-xs text-muted-foreground flex-wrap font-mono">
+                          <span>📅 Due {formatDate(d.deadline)}</span>
+                          {d.eligibility && (
+                            <span>🎯 {d.eligibility}</span>
+                          )}
+                        </div>
+
+                        {/* Expandable Original Announcement Inspector */}
+                        <details className="group mt-3 pt-2 border-t border-white/5 text-xs text-muted-foreground">
+                          <summary className="cursor-pointer font-medium text-primary hover:underline flex items-center gap-1 py-1 select-none">
+                            <span>📄 Show Full Announcement & Details</span>
+                          </summary>
+                          <div className="mt-2 space-y-3 p-3.5 rounded-xl bg-black/50 border border-white/10 text-foreground/90 leading-relaxed font-sans text-xs">
+                            {d.notes && (
+                              <div>
+                                <strong className="text-primary block mb-1">Key Summary & Notes:</strong>
+                                <p className="text-muted-foreground whitespace-pre-wrap">{d.notes}</p>
+                              </div>
+                            )}
+
+                            <div>
+                              <strong className="text-primary block mb-1">Original Telegram Announcement:</strong>
+                              <div className="font-mono text-[11px] text-zinc-300 bg-zinc-950 p-3 rounded-lg border border-white/5 whitespace-pre-wrap max-h-60 overflow-y-auto leading-relaxed select-text">
+                                {d.sourceMessageText || d.notes || "Source message attached from monitored placement channel."}
+                              </div>
+                            </div>
+
+                            {d.links && d.links.length > 0 && (
+                              <div>
+                                <strong className="text-primary block mb-1">Action & Application Links:</strong>
+                                <div className="flex flex-wrap gap-2 mt-1">
+                                  {d.links.map((link, idx) => (
+                                    <a
+                                      key={idx}
+                                      href={link.startsWith("http") ? link : `mailto:${link}`}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-primary/10 border border-primary/20 text-primary text-xs hover:bg-primary/20 transition-colors truncate max-w-md font-mono"
+                                    >
+                                      <ExternalLink className="h-3 w-3 shrink-0" />
+                                      <span className="truncate">{link}</span>
+                                    </a>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
-                        )}
+                        </details>
                       </div>
-                      
+
                       <div className="flex items-center gap-2 flex-wrap shrink-0">
                         <Select
                           value={d.status}
@@ -338,10 +384,11 @@ function PlacementsContent() {
                             ))}
                           </SelectContent>
                         </Select>
+
                         {d.links?.[0] && (
-                          <Button variant="outline" size="icon" asChild>
-                            <a href={d.links[0]} target="_blank" rel="noopener noreferrer">
-                              <ExternalLink className="h-4 w-4" />
+                          <Button variant="glow" size="sm" asChild>
+                            <a href={d.links[0].startsWith("http") ? d.links[0] : `mailto:${d.links[0]}`} target="_blank" rel="noopener noreferrer">
+                              <ExternalLink className="h-3.5 w-3.5 mr-1" /> Apply
                             </a>
                           </Button>
                         )}
