@@ -92,7 +92,7 @@ function formatCallTimeDisplay(item: CallLogItem) {
 }
 
 function formatCallDateDisplay(item: CallLogItem) {
-  const dateVal = item.deadline?.deadlineDate || item.scheduledAt;
+  const dateVal = item.scheduledAt || item.deadline?.deadlineDate;
   return formatDate(dateVal);
 }
 
@@ -643,28 +643,19 @@ export default function CallAlertsPage() {
                                                         )}
                                                         Call Now
                                                       </Button>
-                                                      <Select
-                                                        onValueChange={(val) => {
-                                                          if (val === "custom") {
-                                                            const initTime = c.scheduledAt ? new Date(c.scheduledAt) : new Date(Date.now() + 60 * 60 * 1000);
-                                                            setCustomDateTime(toLocalDatetimeString(initTime));
-                                                            setRescheduleModalId(c.id);
-                                                          } else {
-                                                            void updateCallStatus(c.id, { rescheduleOffsetHours: Number(val) });
-                                                          }
+                                                      <Button
+                                                        variant="outline"
+                                                        size="sm"
+                                                        className="h-7 text-xs bg-zinc-900 border-zinc-700 hover:border-primary/50 hover:bg-primary/10 gap-1 font-medium text-foreground"
+                                                        onClick={() => {
+                                                          const initTime = c.scheduledAt ? new Date(c.scheduledAt) : new Date(Date.now() + 60 * 60 * 1000);
+                                                          setCustomDateTime(toLocalDatetimeString(initTime));
+                                                          setRescheduleModalId(c.id);
                                                         }}
                                                       >
-                                                        <SelectTrigger className="h-7 text-xs bg-zinc-900 border-zinc-700 w-28">
-                                                          <SelectValue placeholder="Reschedule" />
-                                                        </SelectTrigger>
-                                                        <SelectContent className="bg-zinc-950 border-zinc-800 shadow-2xl z-50">
-                                                          <SelectItem value="1">⏳ +1 Hour</SelectItem>
-                                                          <SelectItem value="2">⏳ +2 Hours</SelectItem>
-                                                          <SelectItem value="4">⏳ +4 Hours</SelectItem>
-                                                          <SelectItem value="24">📅 +1 Day</SelectItem>
-                                                          <SelectItem value="custom">📅 Custom Calendar</SelectItem>
-                                                        </SelectContent>
-                                                      </Select>
+                                                        <Calendar className="h-3 w-3 text-primary" />
+                                                        Reschedule
+                                                      </Button>
                                                     </div>
                                                   </td>
                                                 </tr>
