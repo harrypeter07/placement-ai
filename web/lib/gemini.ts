@@ -2,16 +2,16 @@ import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { ExtractedPlacement } from "@/types";
 import { getGeminiApiKey } from "@/lib/ai/gemini-env";
 
-const EXTRACTION_PROMPT = `You are an expert placement opportunity parser for Indian college placement Telegram groups.
+const EXTRACTION_PROMPT = `You are an expert placement opportunity parser for Indian college placement Telegram/WhatsApp notice channels.
 
 Extract structured placement information from the message below. Return ONLY valid JSON with no markdown.
 
 Schema:
 {
-  "company": "string",
-  "role": "string",
-  "deadline": "ISO 8601 date string or empty",
-  "eligibility": "string with CGPA, branch, year requirements",
+  "company": "string (e.g. Nutanix, Infosys, Varroc, Adobe, Stripe, LTM, IBM, Aspect Ratio, Placement Cell)",
+  "role": "string (e.g. Software Engineer Intern, Coding Test Slot 1, GD & Interview Reporting, Pre-Placement Talk, Policy Submission)",
+  "deadline": "ISO 8601 date string with exact time if specified (e.g. 2026-07-27T09:30:00+05:30) or empty string",
+  "eligibility": "string with CGPA, branch, batch requirements",
   "type": "internship" | "full-time" | "both",
   "links": ["url strings"],
   "salary": "string or empty",
@@ -19,11 +19,12 @@ Schema:
 }
 
 Rules:
-- If not a placement post, set confidence to 0 and company to ""
-- Detect spam/promotional content and set confidence below 0.3
-- Parse Indian date formats (DD/MM/YYYY, "by 25th Jan", etc.)
-- Extract all application links
-- Be conservative with confidence
+- Parse ALL placement updates: job postings, registration deadlines, online test slots, GD/interview reporting times, pre-placement talks (PPTs), shortlists, and mandatory policy submission deadlines.
+- If company name is not explicitly mentioned but it is a placement cell notice, set company to "CDPC Placement Cell" or infer from context (e.g., Nutanix, Infosys, Varroc, LTM, IBM).
+- Set high confidence (0.8 to 1.0) for any message containing actionable dates/times for tests, interviews, PPTs, links, or deadlines.
+- Set confidence to 0 ONLY if the text is completely unrelated general chat noise or off-topic spam.
+- Parse Indian date/time formats accurately (e.g. "27-07-2026 @ 9:00 AM", "21st July 2026 Morning", "today before 2:00 PM", "apply before 17July", "8th August 2026").
+- Extract all URLs (Google Forms, Unstop, company portals, LinkedIn, etc.).
 
 Message:
 `;

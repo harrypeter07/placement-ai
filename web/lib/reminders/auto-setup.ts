@@ -10,8 +10,8 @@ import { priorityToEscalation } from "@/lib/reminders/escalation";
 import { extractPlacementFromText } from "@/lib/gemini";
 import type { ITelegramMessage } from "@/models/TelegramMessage";
 
-// Fast regex check to avoid calling Gemini API on casual chat noise
-const PLACEMENT_KEYWORDS = /hiring|apply|deadline|intern|job|salary|lpa|stipend|cgpa|eligibility|register/i;
+// Fast regex check to catch any placement notice, assessment slot, PPT, shortlist or registration
+const PLACEMENT_KEYWORDS = /hiring|apply|deadline|intern|job|salary|lpa|stipend|cgpa|eligibility|register|drive|interview|assessment|test|shortlist|auditorium|venue|reporting|ppt|talk|tech|policy|notice|slot|link|submission|hackathon|contest|competition|unstop|forms/i;
 
 export async function autoProcessNewMessage(message: ITelegramMessage, groupId: string) {
   if (!message.text || !PLACEMENT_KEYWORDS.test(message.text)) {
@@ -19,14 +19,16 @@ export async function autoProcessNewMessage(message: ITelegramMessage, groupId: 
   }
 
   const extracted = await extractPlacementFromText(message.text);
-  if (extracted.confidence < 0.35 || !extracted.company) {
+  const companyName = extracted.company || "CDPC Placement Cell";
+
+  if (extracted.confidence < 0.2) {
     return { skipped: true, reason: "low_confidence", extracted };
   }
 
   // Find if a duplicate global deadline exists (same company, role, and source message)
   const existing = await findDuplicateDeadline(
-    extracted.company,
-    extracted.role || "Role TBD",
+    companyName,
+    extracted.role || "Notice / Drive Update",
     message.messageId,
     groupId
   );
@@ -37,8 +39,8 @@ export async function autoProcessNewMessage(message: ITelegramMessage, groupId: 
     // We just keep using the existing PostgreSQL row matching it
   } else {
     deadlineDoc = await createDeadline({
-      company: extracted.company,
-      role: extracted.role || "Role TBD",
+      company: companyName,
+      role: extracted.role || "Notice / Drive Update",
       deadline: extracted.deadline ? new Date(extracted.deadline) : new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       eligibility: extracted.eligibility || "",
       type: extracted.type || "full-time",
