@@ -24,6 +24,7 @@ export default function StudentProfilePage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [geminiApiKey, setGeminiApiKey] = useState("");
   const [profile, setProfile] = useState({
     fullName: "",
     email: "",
@@ -46,6 +47,9 @@ export default function StudentProfilePage() {
         if (data.formProfile) {
           setProfile((prev) => ({ ...prev, ...data.formProfile }));
         }
+        if (data.geminiApiKey) {
+          setGeminiApiKey(data.geminiApiKey);
+        }
       }
     } catch (err) {
       console.error("Failed to load profile:", err);
@@ -64,7 +68,7 @@ export default function StudentProfilePage() {
       const res = await fetch("/api/settings", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ formProfile: profile }),
+        body: JSON.stringify({ formProfile: profile, geminiApiKey }),
       });
 
       if (res.ok) {
@@ -284,6 +288,27 @@ export default function StudentProfilePage() {
               )}
             </Button>
           </CardContent>
+
+          {/* Gemini AI API Key Card */}
+          <div className="p-4 border-t border-white/10 space-y-3 bg-white/5 rounded-b-xl">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs font-semibold text-primary flex items-center gap-1.5">
+                <Sparkles className="h-3.5 w-3.5 text-primary" />
+                Gemini AI API Key
+              </Label>
+              <span className="text-[10px] text-muted-foreground">Stored securely in DB</span>
+            </div>
+            <Input
+              type="password"
+              placeholder="AIzaSy..."
+              value={geminiApiKey}
+              onChange={(e) => setGeminiApiKey(e.target.value)}
+              className="bg-black/40 border-white/10 font-mono text-xs focus:border-primary"
+            />
+            <p className="text-[11px] text-muted-foreground">
+              This API key is saved to your account and powers PDF resume parsing &amp; form auto-fill.
+            </p>
+          </div>
         </Card>
 
         {/* Right Column: Editable Profile Fields */}

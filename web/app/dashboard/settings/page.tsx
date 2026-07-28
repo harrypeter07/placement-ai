@@ -644,6 +644,29 @@ export default function SettingsPage() {
                     </SelectContent>
                   </Select>
                 </fieldset>
+
+                <fieldset className="space-y-2 border-0 p-0 sm:col-span-2 pt-4 border-t border-white/10">
+                  <Label className="text-primary font-semibold flex items-center gap-1.5">
+                    <Sparkles className="h-4 w-4 text-primary" />
+                    Google Gemini API Key
+                  </Label>
+                  <p className="text-xs text-muted-foreground">
+                    Stored securely in database associated with your user account. Powers placement notice extraction, PDF resume parsing, and Google Form auto-filling.
+                  </p>
+                  <Input
+                    type="password"
+                    value={prefs.geminiApiKey || ""}
+                    onChange={(e) => setPrefs((p) => ({ ...p, geminiApiKey: e.target.value }))}
+                    placeholder="AIzaSy..."
+                    className="font-mono text-xs bg-black/40"
+                  />
+                  <p className="text-[11px] text-muted-foreground">
+                    You can also configure and test this key on your{" "}
+                    <Link href="/dashboard/profile" className="text-purple-300 underline font-medium">
+                      Student Profile Hub &rarr;
+                    </Link>
+                  </p>
+                </fieldset>
               </CardContent>
             </Card>
           </TabsContent>

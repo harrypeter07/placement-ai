@@ -1,19 +1,20 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/api-auth";
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import { getEffectiveGeminiApiKey } from "@/lib/ai/gemini-key";
 
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
   try {
-    await requireAuth();
+    const user = await requireAuth();
     const { resumeContent, fileBase64, mimeType } = await req.json();
 
     if (!resumeContent && !fileBase64) {
       return NextResponse.json({ error: "Please upload a resume file (PDF/DOCX) or paste resume text." }, { status: 400 });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY || "AIzaSyAcKrjJcIze34I8njsnopvN4s1w8uFTnyA";
+    const apiKey = await getEffectiveGeminiApiKey(user.id);
     if (!apiKey) {
       return NextResponse.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
     }
