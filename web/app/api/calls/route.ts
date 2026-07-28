@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { requireAuth } from "@/lib/api-auth";
+import { scheduleQStashCallAlert } from "@/lib/qstash";
 
 export const runtime = "nodejs";
 
@@ -124,6 +125,10 @@ export async function PATCH(req: Request) {
         })
         .eq("id", updated.deadline_id)
         .eq("user_id", user.id);
+    }
+
+    if (updated?.id && updatePayload.scheduled_at) {
+      void scheduleQStashCallAlert(updated.id, String(updatePayload.scheduled_at));
     }
 
     return NextResponse.json({
