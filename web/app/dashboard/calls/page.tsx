@@ -92,7 +92,7 @@ function formatCallTimeDisplay(item: CallLogItem) {
 }
 
 function formatCallDateDisplay(item: CallLogItem) {
-  const dateVal = item.scheduledAt || item.deadline?.deadlineDate;
+  const dateVal = item.scheduledAt || item.deadline?.deadlineDate || new Date().toISOString();
   return formatDate(dateVal);
 }
 
