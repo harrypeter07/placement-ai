@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Sparkles, CheckCircle2, User, FileText, Upload, Save, ShieldCheck, FileType, Check } from "lucide-react";
+import { Loader2, Sparkles, CheckCircle2, User, FileText, Upload, Save, ShieldCheck, FileType } from "lucide-react";
 
 export default function StudentProfilePage() {
   const [loading, setLoading] = useState(true);

@@ -23,6 +23,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
+import Link from "next/link";
+import { Sparkles } from "lucide-react";
 import { Loader2, Save, RotateCcw, Zap, Activity, PhoneCall } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
