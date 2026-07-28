@@ -201,7 +201,7 @@ export function TelegramConnectCard() {
             Telegram connected
           </CardTitle>
           <CardDescription>
-            Session saved securely. The Render worker will use this account — no terminal login.
+            Session saved securely. The Background AI Worker will use this account — no terminal login required.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -215,11 +215,10 @@ export function TelegramConnectCard() {
               <span className="text-xs text-muted-foreground">{status.phoneNumber}</span>
             )}
           </div>
-          <div className="rounded-lg border-2 border-primary/40 bg-primary/10 p-3 text-sm">
-            <p className="font-semibold text-primary">Required for Render worker</p>
-            <p className="text-muted-foreground mt-1">
-              If dashboard shows <strong>waiting</strong> / &quot;GramJS-only&quot;, click below once.
-              Render connects within ~30s — no redeploy needed.
+          <div className="rounded-lg border border-primary/30 bg-primary/10 p-3 text-sm">
+            <p className="font-semibold text-primary">Telegram Background Worker Active</p>
+            <p className="text-muted-foreground text-xs mt-1">
+              Automated MTProto session is synchronized and actively listening to placement channel updates.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -235,7 +234,7 @@ export function TelegramConnectCard() {
                   if (!res.ok) throw new Error(data.error || data.hint || "Sync failed");
                   toast.success(
                     data.message ||
-                      `Synced (${data.telethonLength || "?"} chars). Wait 30s and refresh dashboard.`
+                      `Synced session successfully.`
                   );
                   await load();
                 } catch (e) {
@@ -245,7 +244,7 @@ export function TelegramConnectCard() {
                 }
               }}
             >
-              Sync Render worker session
+              Sync Worker Session
             </LoadingButton>
             <LoadingButton variant="outline" size="sm" loading={disconnecting} onClick={() => void disconnect()}>
               <LogOut className="h-4 w-4 mr-1" />

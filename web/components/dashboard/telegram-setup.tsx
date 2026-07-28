@@ -71,9 +71,9 @@ export function TelegramSetupCard({ hideConnect = false }: { hideConnect?: boole
 
       <Card className="glass">
         <CardHeader>
-          <CardTitle className="text-base">Worker & monitoring</CardTitle>
+          <CardTitle className="text-base">Worker &amp; Monitoring</CardTitle>
           <CardDescription>
-            After connecting above, deploy the Render worker. It loads your session from the database automatically.
+            The background MTProto worker automatically loads your session from the database to monitor channels.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -98,12 +98,12 @@ export function TelegramSetupCard({ hideConnect = false }: { hideConnect?: boole
 
           {status?.telegramAccountConnected === false && (
             <p className="text-sm text-amber-200/90">
-              Connect Telegram in the card above (production URL). Worker will pick it up automatically — no redeploy needed.
+              Connect Telegram in the card above. Worker will pick it up automatically.
             </p>
           )}
           {status?.workerWaiting && (
             <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 space-y-2 text-sm">
-              <p className="font-medium text-amber-200">Worker waiting — why & how to fix</p>
+              <p className="font-medium text-amber-200">Worker status update</p>
               {status.suggestedFix && (
                 <p className="text-foreground">
                   <strong>Fix:</strong> {status.suggestedFix}
@@ -114,8 +114,7 @@ export function TelegramSetupCard({ hideConnect = false }: { hideConnect?: boole
               )}
               {status.hasTelethonSession === false && status.telegramAccountConnected && (
                 <p className="text-amber-100/90">
-                  Telegram is connected for the website but <strong>Render worker session is missing</strong> — use
-                  &quot;Sync Render worker session&quot; above.
+                  Telegram is connected for the website. Click <strong>Sync Worker Session</strong> above to finalize.
                 </p>
               )}
               {status.workerDetailLog && (
@@ -123,12 +122,6 @@ export function TelegramSetupCard({ hideConnect = false }: { hideConnect?: boole
                   {status.workerDetailLog}
                 </pre>
               )}
-              <p className="text-xs text-muted-foreground">
-                Render logs: Dashboard → your worker → Logs. Health:{" "}
-                <code className="bg-muted px-1 rounded">/health</code> shows{" "}
-                <code className="bg-muted px-1 rounded">waitReason</code> and{" "}
-                <code className="bg-muted px-1 rounded">detailLog</code>.
-              </p>
             </div>
           )}
 
@@ -141,8 +134,6 @@ export function TelegramSetupCard({ hideConnect = false }: { hideConnect?: boole
 
           <ol className="list-decimal list-inside space-y-2 text-sm text-muted-foreground">
             <li>Connect Telegram in the card above (phone + OTP)</li>
-            <li>Match <code className="bg-muted px-1 rounded">TELEGRAM_WORKER_SECRET</code> on Vercel and Render</li>
-            <li>Redeploy the Render worker — set <code className="bg-muted px-1 rounded">PYTHON_VERSION=3.11.9</code></li>
             <li>In <strong>Notifications</strong>, turn <strong>Monitor</strong> ON for placement groups</li>
           </ol>
 

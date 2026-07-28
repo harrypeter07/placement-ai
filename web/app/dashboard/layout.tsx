@@ -8,7 +8,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
   return (
     <>
       <DashboardSidebar />
-      <main className="lg:pl-64 min-h-screen pb-20 lg:pb-0">{children}</main>
+      <main className="lg:pl-64 min-h-screen pt-14 lg:pt-0">{children}</main>
       <MobileBottomNav />
       <CommandPalette />
       <ReminderToastPoller />

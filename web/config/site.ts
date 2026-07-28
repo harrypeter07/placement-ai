@@ -21,6 +21,8 @@ export const siteConfig = {
       { title: "Placements", href: "/dashboard/deadlines", icon: "Clock" },
       { title: "Reminder Hub", href: "/dashboard/reminders", icon: "AlarmClock" },
       { title: "Call Alerts", href: "/dashboard/calls", icon: "PhoneCall" },
+      { title: "Form Automator", href: "/dashboard/forms", icon: "ClipboardList" },
+      { title: "Student Profile", href: "/dashboard/profile", icon: "User" },
       { title: "Calendar", href: "/dashboard/calendar", icon: "Calendar" },
       { title: "Notifications", href: "/dashboard/notifications", icon: "Bell" },
       { title: "AI Insights", href: "/dashboard/insights", icon: "Sparkles" },
