@@ -158,7 +158,7 @@ ${transcript.slice(0, 28000)}`;
 
   let text = "";
   try {
-    const result = await generateGeminiContent(userId, prompt, PRIMARY_GEMINI_MODEL);
+    const result = await generateGeminiContent(undefined, prompt, PRIMARY_GEMINI_MODEL);
     text = result.response.text().replace(/```json\n?|\n?```/g, "").trim();
   } catch (err) {
     console.warn("[chat-insights] Gemini analysis fallback:", err);
