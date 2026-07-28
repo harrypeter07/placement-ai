@@ -75,7 +75,7 @@ See **[HOW_IT_WORKS.md](./HOW_IT_WORKS.md)** for Telegram groups (unlimited, dyn
 
 ### Vercel
 
-Deploy with root `vercel.json` (builds `web/`).
+Deploy with root `vercel.json` (builds `web/`). Integrated with Upstash QStash for exact-second delayed call alert triggers.
 
 ### Render
 
