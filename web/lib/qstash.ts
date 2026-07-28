@@ -18,9 +18,8 @@ export async function scheduleQStashCallAlert(reminderId: string, scheduledAtIso
     const notBeforeSeconds = Math.floor(new Date(scheduledAtIso).getTime() / 1000);
     const workerSecret = process.env.TELEGRAM_WORKER_SECRET || "placemint_secure_worker_2026";
 
-    console.log(`[QStash] Publishing delayed message for reminder ${reminderId} at epoch ${notBeforeSeconds}`);
-
-    const res = await fetch(`https://qstash.upstash.io/v2/publish/${targetUrl}`, {
+    const qstashHost = (process.env.QSTASH_URL || "https://qstash.upstash.io").replace(/\/$/, "");
+    const res = await fetch(`${qstashHost}/v2/publish/${targetUrl}`, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${token}`,
