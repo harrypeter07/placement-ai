@@ -13,19 +13,25 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Please upload a resume file (PDF/DOCX) or paste resume text." }, { status: 400 });
     }
 
-    const prompt = `You are an expert resume parsing AI. Analyze the attached student resume document/text and extract structured student profile information for job application auto-filling.
+    const prompt = `You are an expert resume parsing AI for Indian engineering & university students. Analyze the attached resume document/text and extract structured student profile information for automated job applications.
 Return ONLY a raw JSON object with the following fields:
 {
   "name": "Full Name or null",
   "email": "Email address or null",
   "phone": "Phone number or null",
+  "collegeName": "College or University Name or null",
   "branch": "Engineering branch/major (e.g. Computer Science & Engineering) or null",
   "cgpa": "CGPA or percentage (e.g. 8.75) or null",
   "graduationYear": "4-digit graduation year (e.g. 2026) or null",
-  "resumeLink": "Google Drive or public link if present in document or null",
-  "github": "GitHub profile link or null",
-  "linkedin": "LinkedIn profile link or null",
-  "skills": ["Array of key technical skills"]
+  "rollNumber": "Roll Number, Enrollment ID, or Registration Number or null",
+  "resumeLink": "Google Drive, Dropbox or public resume link if present in document or null",
+  "github": "GitHub profile URL or null",
+  "linkedin": "LinkedIn profile URL or null",
+  "portfolioUrl": "Personal portfolio or website URL or null",
+  "workExperience": "Detailed summary of internships, company names, roles, and durations or null",
+  "projects": "Key projects with project titles, technologies used, and brief descriptions or null",
+  "skills": ["Array of technical skills, programming languages, and tools"],
+  "certifications": ["Array of certifications, courses, or achievements"]
 }`;
 
     let result;

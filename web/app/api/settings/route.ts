@@ -80,12 +80,19 @@ const patchSchema = z
         cgpa: z.string().optional(),
         branch: z.string().optional(),
         graduationYear: z.string().optional(),
+        collegeName: z.string().optional(),
+        rollNumber: z.string().optional(),
         resumeLink: z.string().optional(),
         githubLink: z.string().optional(),
         linkedInLink: z.string().optional(),
-        rollNumber: z.string().optional(),
+        portfolioUrl: z.string().optional(),
+        workExperience: z.string().optional(),
+        projects: z.string().optional(),
+        skills: z.string().optional(),
+        certifications: z.string().optional(),
         additionalInfo: z.string().optional(),
       })
+      .passthrough()
       .optional(),
     geminiApiKey: z.string().optional(),
     twilioAccountSid: z.string().optional(),
@@ -103,9 +110,10 @@ const patchSchema = z
         welcomeMessage: z.string().optional(),
         defaultCallOffsetDays: z.number().optional(),
       })
+      .passthrough()
       .optional(),
   })
-  .strict();
+  .passthrough();
 
 function mapDbToFrontend(doc: any) {
   return {
