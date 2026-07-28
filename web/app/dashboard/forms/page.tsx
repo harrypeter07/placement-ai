@@ -239,6 +239,24 @@ export default function FormAutomatorPage() {
                     </>
                   )}
                 </Button>
+
+                <div className="pt-2 border-t border-white/10">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="w-full text-xs border-purple-500/30 bg-purple-500/10 text-purple-300 hover:bg-purple-500/20 gap-1.5"
+                    onClick={() => {
+                      reset({
+                        formUrl: "https://docs.google.com/forms/d/e/1FAIpQLSdj8k7DVWFNsJAgODVxJnHvL1YlA-Qhmnb-4vj0FA5_WVub9Q/viewform",
+                        autoSubmit: false,
+                      });
+                      toast.info("Sample Google Form loaded! Tap Auto-Fill Form to test live auto-fill.");
+                    }}
+                  >
+                    ⚡ Test Live Auto-Fill on Sample Form
+                  </Button>
+                </div>
               </form>
             </CardContent>
           </Card>
@@ -441,22 +459,27 @@ export default function FormAutomatorPage() {
                 </div>
               )}
 
-              {/* Prefill Live Preview */}
+              {/* Prefill Live iFrame Preview */}
               {reviewingJob.fillMethod === "prefill_url" && reviewingJob.screenshot && (
-                <div className="p-4 rounded-lg border border-purple-500/20 bg-purple-500/5 flex items-center justify-between">
-                  <div className="space-y-0.5">
-                    <p className="text-xs font-semibold text-purple-300">Prefilled Live Form Link</p>
-                    <p className="text-[11px] text-muted-foreground">Verify inputs live on the official form UI.</p>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-semibold text-purple-300">Live Auto-Filled Form Preview:</h4>
+                    <a
+                      href={reviewingJob.screenshot}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-xs text-purple-300 hover:underline font-medium"
+                    >
+                      Open in Full Tab <ExternalLink className="h-3 w-3" />
+                    </a>
                   </div>
-                  <a
-                    href={reviewingJob.screenshot}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center gap-1 bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold px-3 py-1.5 rounded-lg transition"
-                  >
-                    Open Live Form
-                    <ExternalLink className="h-3 w-3" />
-                  </a>
+                  <div className="rounded-xl border border-purple-500/30 overflow-hidden bg-slate-900 h-[480px] shadow-2xl relative">
+                    <iframe
+                      src={reviewingJob.screenshot}
+                      className="w-full h-full border-0"
+                      title="Google Form Auto-Filled Preview"
+                    />
+                  </div>
                 </div>
               )}
 

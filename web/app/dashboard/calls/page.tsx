@@ -896,13 +896,33 @@ export default function CallAlertsPage() {
                     type="button"
                     variant="outline"
                     size="sm"
+                    className="h-8 text-xs bg-emerald-500/10 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/20"
+                    onClick={() => {
+                      const d = new Date(Date.now() + 2 * 60 * 1000);
+                      if (rescheduleModalId) {
+                        void updateCallStatus(rescheduleModalId, { scheduledAt: d.toISOString() });
+                        setRescheduleModalId(null);
+                        setCustomDateTime("");
+                      }
+                    }}
+                  >
+                    ⚡ +2 Mins
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
                     className="h-8 text-xs bg-zinc-900 border-zinc-800 hover:border-primary/50 hover:bg-primary/10"
                     onClick={() => {
                       const d = new Date(Date.now() + 15 * 60 * 1000);
-                      setCustomDateTime(toLocalDatetimeString(d));
+                      if (rescheduleModalId) {
+                        void updateCallStatus(rescheduleModalId, { scheduledAt: d.toISOString() });
+                        setRescheduleModalId(null);
+                        setCustomDateTime("");
+                      }
                     }}
                   >
-                    ⚡ +15 Min
+                    ⏳ +15 Min
                   </Button>
                   <Button
                     type="button"
@@ -911,7 +931,11 @@ export default function CallAlertsPage() {
                     className="h-8 text-xs bg-zinc-900 border-zinc-800 hover:border-primary/50 hover:bg-primary/10"
                     onClick={() => {
                       const d = new Date(Date.now() + 30 * 60 * 1000);
-                      setCustomDateTime(toLocalDatetimeString(d));
+                      if (rescheduleModalId) {
+                        void updateCallStatus(rescheduleModalId, { scheduledAt: d.toISOString() });
+                        setRescheduleModalId(null);
+                        setCustomDateTime("");
+                      }
                     }}
                   >
                     ⏳ +30 Min
@@ -923,7 +947,11 @@ export default function CallAlertsPage() {
                     className="h-8 text-xs bg-zinc-900 border-zinc-800 hover:border-primary/50 hover:bg-primary/10"
                     onClick={() => {
                       const d = new Date(Date.now() + 60 * 60 * 1000);
-                      setCustomDateTime(toLocalDatetimeString(d));
+                      if (rescheduleModalId) {
+                        void updateCallStatus(rescheduleModalId, { scheduledAt: d.toISOString() });
+                        setRescheduleModalId(null);
+                        setCustomDateTime("");
+                      }
                     }}
                   >
                     🕐 +1 Hour
@@ -935,7 +963,11 @@ export default function CallAlertsPage() {
                     className="h-8 text-xs bg-zinc-900 border-zinc-800 hover:border-primary/50 hover:bg-primary/10"
                     onClick={() => {
                       const d = new Date(Date.now() + 2 * 60 * 60 * 1000);
-                      setCustomDateTime(toLocalDatetimeString(d));
+                      if (rescheduleModalId) {
+                        void updateCallStatus(rescheduleModalId, { scheduledAt: d.toISOString() });
+                        setRescheduleModalId(null);
+                        setCustomDateTime("");
+                      }
                     }}
                   >
                     ⏳ +2 Hours
@@ -949,7 +981,11 @@ export default function CallAlertsPage() {
                       const tom = new Date();
                       tom.setDate(tom.getDate() + 1);
                       tom.setHours(9, 0, 0, 0);
-                      setCustomDateTime(toLocalDatetimeString(tom));
+                      if (rescheduleModalId) {
+                        void updateCallStatus(rescheduleModalId, { scheduledAt: tom.toISOString() });
+                        setRescheduleModalId(null);
+                        setCustomDateTime("");
+                      }
                     }}
                   >
                     📅 Tomorrow 9 AM

@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { supabase } from "@/lib/supabase";
 import { requireAuth } from "@/lib/api-auth";
+import { scheduleQStashCallAlert } from "@/lib/qstash";
 
 export const runtime = "nodejs";
 
@@ -99,6 +100,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
     if (updateErr || !updated) {
       return NextResponse.json({ error: "Failed to update" }, { status: 500 });
+    }
+
+    if (updated?.id && updated?.scheduled_at && (updated.status === "active" || updated.status === "snoozed")) {
+      void scheduleQStashCallAlert(updated.id, updated.scheduled_at);
     }
 
     const mapped = {

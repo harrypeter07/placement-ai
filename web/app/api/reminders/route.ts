@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { requireAuth } from "@/lib/api-auth";
 import { getStudentPreferences } from "@/lib/db-supabase";
 import { priorityToEscalation } from "@/lib/reminders/escalation";
+import { scheduleQStashCallAlert } from "@/lib/qstash";
 
 export const runtime = "nodejs";
 
@@ -196,6 +197,7 @@ export async function POST(req: Request) {
             ...doc,
             _id: doc.id,
           });
+          void scheduleQStashCallAlert(doc.id, doc.scheduled_at);
         }
       }
     }
@@ -249,6 +251,7 @@ export async function POST(req: Request) {
             ...callDoc,
             _id: callDoc.id,
           });
+          void scheduleQStashCallAlert(callDoc.id, callDoc.scheduled_at);
         }
       }
     }

@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { supabase } from "./supabase";
+import { scheduleQStashCallAlert } from "@/lib/qstash";
 
 export interface StudentPrefData {
   timezone?: string;
@@ -172,6 +173,9 @@ export async function createReminder(data: Record<string, any>) {
     console.error("[db-supabase] createReminder error:", error);
     throw error;
   }
+  if (inserted?.id && inserted?.scheduled_at) {
+    void scheduleQStashCallAlert(inserted.id, inserted.scheduled_at);
+  }
   return inserted;
 }
 
@@ -226,6 +230,8 @@ export async function snoozeReminder(reminderId: string, snoozeMinutes: number) 
     console.error("[db-supabase] snoozeReminder error:", error);
     throw error;
   }
+
+  void scheduleQStashCallAlert(reminderId, snoozeUntil);
 }
 
 export async function getCalendarEventMap(userId: string, deadlineId: string, dedupKey?: string) {
