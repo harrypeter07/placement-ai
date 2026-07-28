@@ -3,9 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useSession, signIn } from "next-auth/react";
 import { DashboardHeader } from "@/components/dashboard/sidebar";
-import { TelegramSetupCard } from "@/components/dashboard/telegram-setup";
 import { TelegramConnectCard } from "@/components/dashboard/telegram-connect";
-import { SystemStatusBar } from "@/components/dashboard/system-status";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -23,9 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import Link from "next/link";
-import { Sparkles } from "lucide-react";
-import { Loader2, Save, RotateCcw, Zap, Activity, PhoneCall, Trash2 } from "lucide-react";
+import { Sparkles, Loader2, Save, RotateCcw, Zap, Activity, PhoneCall, Trash2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
 type Prefs = {
