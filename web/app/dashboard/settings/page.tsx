@@ -25,7 +25,7 @@ import {
 import { toast } from "sonner";
 import Link from "next/link";
 import { Sparkles } from "lucide-react";
-import { Loader2, Save, RotateCcw, Zap, Activity, PhoneCall } from "lucide-react";
+import { Loader2, Save, RotateCcw, Zap, Activity, PhoneCall, Trash2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
 type Prefs = {
@@ -322,55 +322,45 @@ export default function SettingsPage() {
     <>
       <DashboardHeader title="Settings" />
       <main className="p-4 lg:p-8 space-y-6 max-w-4xl pb-24">
-        <SystemStatusBar />
-
-        {/* Always visible — do not wait for prefs load */}
-        <section id="connect-telegram" className="scroll-mt-24">
-          <h2 className="text-lg font-semibold mb-3 flex items-center gap-2">
-            Connect Telegram account
-            <span className="text-xs font-normal text-muted-foreground">(required for worker)</span>
-          </h2>
-          <TelegramConnectCard />
-        </section>
-
-        <TelegramSetupCard hideConnect />
-
         {loading || !prefs ? (
           <div className="flex justify-center py-12">
             <Loader2 className="h-8 w-8 animate-spin text-primary" />
           </div>
         ) : (
           <>
-        <div className="flex flex-wrap gap-3 items-center justify-between">
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            {dirty && <span className="text-amber-400">Unsaved changes</span>}
-          </div>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={resetDefaults} disabled={saving}>
-              <RotateCcw className="h-4 w-4 mr-1" /> Reset defaults
-            </Button>
-            <Button variant="glow" size="sm" onClick={save} disabled={saving || !dirty}>
-              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4 mr-1" />}
-              Save
-            </Button>
-          </div>
-        </div>
+            <div className="flex items-center justify-between gap-4 bg-white/5 border border-white/10 p-4 rounded-xl">
+              <div>
+                <h2 className="text-base font-semibold">Settings &amp; Preferences</h2>
+                <p className="text-xs text-muted-foreground">
+                  {dirty ? <span className="text-amber-400 font-medium">⚠️ Unsaved changes</span> : "All settings up to date"}
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={resetDefaults} disabled={saving} className="text-xs">
+                  <RotateCcw className="h-3.5 w-3.5 mr-1" /> Reset
+                </Button>
+                <Button variant="glow" size="sm" onClick={save} disabled={saving || !dirty} className="text-xs">
+                  {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Save className="h-3.5 w-3.5 mr-1" />}
+                  Save Settings
+                </Button>
+              </div>
+            </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid grid-cols-2 md:grid-cols-4 gap-1.5 h-auto bg-white/5 p-1.5 rounded-xl border border-white/10">
-            <TabsTrigger value="general" className="data-[state=active]:bg-primary/20 text-xs font-semibold py-2">
-              ⚙️ Preferences
-            </TabsTrigger>
-            <TabsTrigger value="calls" className="data-[state=active]:bg-primary/20 text-xs font-semibold py-2">
-              📞 Voice &amp; Call Alerts
-            </TabsTrigger>
-            <TabsTrigger value="connect" className="data-[state=active]:bg-primary/20 text-xs font-semibold py-2">
-              ✈️ Telegram Account
-            </TabsTrigger>
-            <TabsTrigger value="ai" className="data-[state=active]:bg-primary/20 text-xs font-semibold py-2">
-              🤖 AI &amp; API Keys
-            </TabsTrigger>
-          </TabsList>
+            <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+              <TabsList className="grid grid-cols-2 md:grid-cols-4 gap-1.5 h-auto bg-white/5 p-1.5 rounded-xl border border-white/10">
+                <TabsTrigger value="general" className="data-[state=active]:bg-primary/20 text-xs font-semibold py-2">
+                  ⚙️ Preferences
+                </TabsTrigger>
+                <TabsTrigger value="calls" className="data-[state=active]:bg-primary/20 text-xs font-semibold py-2">
+                  📞 Voice &amp; Call Alerts
+                </TabsTrigger>
+                <TabsTrigger value="connect" className="data-[state=active]:bg-primary/20 text-xs font-semibold py-2">
+                  ✈️ Telegram Account
+                </TabsTrigger>
+                <TabsTrigger value="ai" className="data-[state=active]:bg-primary/20 text-xs font-semibold py-2">
+                  🤖 AI &amp; API Keys
+                </TabsTrigger>
+              </TabsList>
 
           <TabsContent value="connect" className="space-y-4">
             <TelegramConnectCard />
@@ -705,15 +695,26 @@ export default function SettingsPage() {
                     type="password"
                     value={prefs.geminiApiKey || ""}
                     onChange={(e) => setPrefs((p) => (p ? { ...p, geminiApiKey: e.target.value } : null))}
-                    placeholder="AIzaSy..."
+                    placeholder="Paste your Gemini API key..."
                     className="font-mono text-xs bg-black/40"
                   />
-                  <p className="text-[11px] text-muted-foreground">
-                    You can also configure and test this key on your{" "}
-                    <Link href="/dashboard/profile" className="text-purple-300 underline font-medium">
-                      Student Profile Hub &rarr;
-                    </Link>
-                  </p>
+                  <div className="flex items-center gap-2 pt-1">
+                    <Button onClick={save} disabled={saving} size="sm" variant="glow" className="text-xs h-8">
+                      {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Save className="h-3.5 w-3.5 mr-1" />}
+                      Save API Key
+                    </Button>
+                    {prefs.geminiApiKey && (
+                      <Button
+                        onClick={() => setPrefs((p) => (p ? { ...p, geminiApiKey: "" } : null))}
+                        variant="outline"
+                        size="sm"
+                        className="text-xs border-red-500/30 text-red-400 hover:bg-red-500/10 h-8"
+                      >
+                        <Trash2 className="h-3.5 w-3.5 mr-1" />
+                        Delete Key
+                      </Button>
+                    )}
+                  </div>
                 </fieldset>
               </CardContent>
             </Card>
