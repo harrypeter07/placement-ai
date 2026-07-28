@@ -14,7 +14,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Sparkles, CheckCircle2, User, FileText, Upload, Save, ShieldCheck, FileType, Trash2 } from "lucide-react";
+import { Loader2, Sparkles, CheckCircle2, User, FileText, Upload, Save, ShieldCheck, FileType, Trash2, Eye, EyeOff } from "lucide-react";
 
 export default function StudentProfilePage() {
   const [loading, setLoading] = useState(true);
@@ -25,6 +25,8 @@ export default function StudentProfilePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [geminiApiKey, setGeminiApiKey] = useState("");
+  const [initialSavedKey, setInitialSavedKey] = useState("");
+  const [showApiKey, setShowApiKey] = useState(false);
   const [profile, setProfile] = useState({
     fullName: "",
     email: "",
@@ -49,6 +51,7 @@ export default function StudentProfilePage() {
         }
         if (data.geminiApiKey) {
           setGeminiApiKey(data.geminiApiKey);
+          setInitialSavedKey(data.geminiApiKey);
         }
       }
     } catch (err) {
@@ -72,7 +75,8 @@ export default function StudentProfilePage() {
       });
 
       if (res.ok) {
-        toast.success("Student profile updated successfully!");
+        setInitialSavedKey(geminiApiKey);
+        toast.success("Student profile and API key updated successfully!");
       } else {
         toast.error("Failed to save profile.");
       }
@@ -296,30 +300,61 @@ export default function StudentProfilePage() {
                 <Sparkles className="h-3.5 w-3.5 text-primary" />
                 Gemini AI API Key
               </Label>
-              <span className="text-[10px] text-muted-foreground">Stored securely in DB</span>
+              {initialSavedKey ? (
+                <Badge variant="success" className="text-[10px] py-0 px-2 flex items-center gap-1">
+                  <CheckCircle2 className="h-3 w-3 text-emerald-400" /> Saved in DB
+                </Badge>
+              ) : (
+                <Badge variant="warning" className="text-[10px] py-0 px-2">
+                  No Key Saved
+                </Badge>
+              )}
             </div>
-            <Input
-              type="password"
-              placeholder="Paste your Gemini API key here..."
-              value={geminiApiKey}
-              onChange={(e) => setGeminiApiKey(e.target.value)}
-              className="bg-black/40 border-white/10 font-mono text-xs focus:border-primary"
-            />
+
+            <div className="relative flex items-center">
+              <Input
+                type={showApiKey ? "text" : "password"}
+                placeholder="Paste your Gemini API key here..."
+                value={geminiApiKey}
+                onChange={(e) => setGeminiApiKey(e.target.value)}
+                className="bg-black/40 border-white/10 font-mono text-xs focus:border-primary pr-10"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon"
+                onClick={() => setShowApiKey(!showApiKey)}
+                className="absolute right-1 h-7 w-7 text-muted-foreground hover:text-white"
+                title={showApiKey ? "Hide Key" : "Show Key"}
+              >
+                {showApiKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+              </Button>
+            </div>
+
             <div className="flex items-center gap-2 pt-1">
               <Button onClick={handleSave} disabled={saving} size="sm" variant="glow" className="flex-1 text-xs h-8">
-                {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Save className="h-3.5 w-3.5 mr-1" />}
-                Save API Key
+                {saving ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                ) : (
+                  <Save className="h-3.5 w-3.5 mr-1" />
+                )}
+                {geminiApiKey && geminiApiKey === initialSavedKey
+                  ? "✓ API Key Saved"
+                  : initialSavedKey
+                  ? "Update API Key"
+                  : "Save API Key"}
               </Button>
               {geminiApiKey && (
                 <Button
                   onClick={async () => {
                     setGeminiApiKey("");
+                    setInitialSavedKey("");
                     const res = await fetch("/api/settings", {
                       method: "PATCH",
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({ formProfile: profile, geminiApiKey: "" }),
                     });
-                    if (res.ok) toast.success("Gemini API Key removed");
+                    if (res.ok) toast.success("Gemini API Key deleted from DB");
                   }}
                   variant="outline"
                   size="sm"

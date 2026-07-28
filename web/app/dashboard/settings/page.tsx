@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { toast } from "sonner";
-import { Sparkles, Loader2, Save, RotateCcw, Zap, Activity, PhoneCall, Trash2 } from "lucide-react";
+import { Sparkles, Loader2, Save, RotateCcw, Zap, Activity, PhoneCall, Trash2, CheckCircle2, Eye, EyeOff } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
 type Prefs = {
@@ -99,6 +99,8 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [showSettingsApiKey, setShowSettingsApiKey] = useState(false);
+  const [initialSavedSettingsKey, setInitialSavedSettingsKey] = useState("");
   const [offsetInput, setOffsetInput] = useState("");
   const [activeTab, setActiveTab] = useState("connect");
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -199,6 +201,7 @@ export default function SettingsPage() {
           twilioToPhone: d.twilioToPhone || "",
           twilioVoiceSettings: tvs,
         });
+        setInitialSavedSettingsKey(d.geminiApiKey || "");
         setOffsetInput(defaultOffsetsStr(d.reminders?.defaultOffsetsMinutes || []));
       })
       .finally(() => setLoading(false));
@@ -679,29 +682,65 @@ export default function SettingsPage() {
                   </Select>
                 </fieldset>
 
-                <fieldset className="space-y-2 border-0 p-0 sm:col-span-2 pt-4 border-t border-white/10">
-                  <Label className="text-primary font-semibold flex items-center gap-1.5">
-                    <Sparkles className="h-4 w-4 text-primary" />
-                    Google Gemini API Key
-                  </Label>
+                <fieldset className="space-y-3 border-0 p-0 sm:col-span-2 pt-4 border-t border-white/10">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-primary font-semibold flex items-center gap-1.5">
+                      <Sparkles className="h-4 w-4 text-primary" />
+                      Google Gemini API Key
+                    </Label>
+                    {initialSavedSettingsKey ? (
+                      <Badge variant="success" className="text-[10px] py-0 px-2 flex items-center gap-1">
+                        <CheckCircle2 className="h-3 w-3 text-emerald-400" /> Saved in DB
+                      </Badge>
+                    ) : (
+                      <Badge variant="warning" className="text-[10px] py-0 px-2">
+                        No Key Saved
+                      </Badge>
+                    )}
+                  </div>
                   <p className="text-xs text-muted-foreground">
                     Stored securely in database associated with your user account. Powers placement notice extraction, PDF resume parsing, and Google Form auto-filling.
                   </p>
-                  <Input
-                    type="password"
-                    value={prefs.geminiApiKey || ""}
-                    onChange={(e) => setPrefs((p) => (p ? { ...p, geminiApiKey: e.target.value } : null))}
-                    placeholder="Paste your Gemini API key..."
-                    className="font-mono text-xs bg-black/40"
-                  />
+
+                  <div className="relative flex items-center">
+                    <Input
+                      type={showSettingsApiKey ? "text" : "password"}
+                      value={prefs.geminiApiKey || ""}
+                      onChange={(e) => setPrefs((p) => (p ? { ...p, geminiApiKey: e.target.value } : null))}
+                      placeholder="Paste your Gemini API key..."
+                      className="font-mono text-xs bg-black/40 pr-10"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setShowSettingsApiKey(!showSettingsApiKey)}
+                      className="absolute right-1 h-7 w-7 text-muted-foreground hover:text-white"
+                      title={showSettingsApiKey ? "Hide Key" : "Show Key"}
+                    >
+                      {showSettingsApiKey ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                    </Button>
+                  </div>
+
                   <div className="flex items-center gap-2 pt-1">
                     <Button onClick={save} disabled={saving} size="sm" variant="glow" className="text-xs h-8">
-                      {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Save className="h-3.5 w-3.5 mr-1" />}
-                      Save API Key
+                      {saving ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                      ) : (
+                        <Save className="h-3.5 w-3.5 mr-1" />
+                      )}
+                      {prefs.geminiApiKey && prefs.geminiApiKey === initialSavedSettingsKey
+                        ? "✓ API Key Saved"
+                        : initialSavedSettingsKey
+                        ? "Update API Key"
+                        : "Save API Key"}
                     </Button>
                     {prefs.geminiApiKey && (
                       <Button
-                        onClick={() => setPrefs((p) => (p ? { ...p, geminiApiKey: "" } : null))}
+                        onClick={() => {
+                          setPrefs((p) => (p ? { ...p, geminiApiKey: "" } : null));
+                          save();
+                        }}
                         variant="outline"
                         size="sm"
                         className="text-xs border-red-500/30 text-red-400 hover:bg-red-500/10 h-8"
