@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { toast } from "sonner";
 import {
   Card,
@@ -14,13 +14,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Sparkles, CheckCircle2, User, FileText, Upload, Save, ShieldCheck } from "lucide-react";
+import { Loader2, Sparkles, CheckCircle2, User, FileText, Upload, Save, ShieldCheck, FileType, Check } from "lucide-react";
 
 export default function StudentProfilePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [parsingResume, setParsingResume] = useState(false);
   const [resumeText, setResumeText] = useState("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [profile, setProfile] = useState({
     fullName: "",
@@ -77,7 +79,57 @@ export default function StudentProfilePage() {
     }
   };
 
-  const handleParseResume = async () => {
+  const handleFileUpload = async (file: File) => {
+    setSelectedFile(file);
+    setParsingResume(true);
+    const toastId = toast.loading(`Uploading & AI parsing "${file.name}"...`);
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const base64String = (reader.result as string).split(",")[1];
+        const res = await fetch("/api/resume/parse", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fileBase64: base64String,
+            mimeType: file.type || "application/pdf",
+          }),
+        });
+
+        const data = await res.json();
+        if (res.ok && data.extracted) {
+          setProfile((prev) => ({
+            ...prev,
+            fullName: data.extracted.name || prev.fullName,
+            email: data.extracted.email || prev.email,
+            phone: data.extracted.phone || prev.phone,
+            branch: data.extracted.branch || prev.branch,
+            cgpa: data.extracted.cgpa || prev.cgpa,
+            graduationYear: data.extracted.graduationYear || prev.graduationYear,
+            resumeLink: data.extracted.resumeLink || prev.resumeLink,
+            githubLink: data.extracted.github || prev.githubLink,
+            linkedInLink: data.extracted.linkedin || prev.linkedInLink,
+            additionalInfo: data.extracted.skills?.join(", ") || prev.additionalInfo,
+          }));
+          toast.success("PDF/DOCX Resume parsed & profile fields updated!", { id: toastId });
+        } else {
+          toast.error(data.error || "Could not parse resume document", { id: toastId });
+        }
+        setParsingResume(false);
+      };
+      reader.onerror = () => {
+        toast.error("Failed to read file", { id: toastId });
+        setParsingResume(false);
+      };
+      reader.readAsDataURL(file);
+    } catch {
+      toast.error("Error uploading file", { id: toastId });
+      setParsingResume(false);
+    }
+  };
+
+  const handleParseText = async () => {
     if (!resumeText.trim()) {
       toast.error("Please paste your resume text to extract information!");
       return;
@@ -108,7 +160,7 @@ export default function StudentProfilePage() {
           linkedInLink: data.extracted.linkedin || prev.linkedInLink,
           additionalInfo: data.extracted.skills?.join(", ") || prev.additionalInfo,
         }));
-        toast.success("Resume parsed & profile fields auto-populated!", { id: toastId });
+        toast.success("Resume text parsed & profile fields updated!", { id: toastId });
       } else {
         toast.error(data.error || "Could not parse resume text", { id: toastId });
       }
@@ -135,10 +187,10 @@ export default function StudentProfilePage() {
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent flex items-center gap-2">
             <User className="h-8 w-8 text-primary" />
-            Student Profile &amp; Resume Collector
+            Student Profile &amp; Resume Hub
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Store your verified details for Google Form automation and placement applications.
+            Upload your PDF/DOCX resume or store details for instant 1-click Google Form automation.
           </p>
         </div>
         <Badge
@@ -154,39 +206,80 @@ export default function StudentProfilePage() {
       </div>
 
       <div className="grid gap-6 md:grid-cols-3">
-        {/* Left Column: AI Resume Parser */}
+        {/* Left Column: AI Resume File & Text Parser */}
         <Card className="glass md:col-span-1 border-white/10">
           <CardHeader>
             <CardTitle className="text-lg flex items-center gap-2 text-purple-300">
               <Sparkles className="h-5 w-5 text-purple-400" />
-              AI Resume Parser
+              Upload PDF / DOCX Resume
             </CardTitle>
             <CardDescription className="text-xs">
-              Paste your raw resume text below. AI will extract your fields automatically.
+              Upload your resume document directly. Gemini AI will auto-extract all fields into your profile.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* File Upload Drag & Drop Box */}
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept=".pdf,.doc,.docx,.txt"
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files && e.target.files[0]) {
+                  handleFileUpload(e.target.files[0]);
+                }
+              }}
+            />
+
+            <div
+              onClick={() => fileInputRef.current?.click()}
+              className="border-2 border-dashed border-purple-500/40 hover:border-purple-400 bg-purple-500/5 hover:bg-purple-500/10 rounded-xl p-6 text-center cursor-pointer transition flex flex-col items-center justify-center gap-3"
+            >
+              <div className="h-12 w-12 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-300">
+                <FileType className="h-6 w-6" />
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs font-semibold text-purple-200">
+                  {selectedFile ? selectedFile.name : "Click or Drag & Drop Resume File"}
+                </p>
+                <p className="text-[10px] text-muted-foreground">
+                  Supports PDF, DOCX, DOC, TXT (Max 10MB)
+                </p>
+              </div>
+              <Button size="sm" variant="outline" className="text-xs border-purple-500/30 text-purple-300 h-7">
+                <Upload className="mr-1.5 h-3.5 w-3.5" />
+                Select File
+              </Button>
+            </div>
+
+            <div className="relative flex py-1 items-center">
+              <div className="flex-grow border-t border-white/10"></div>
+              <span className="flex-shrink mx-2 text-[10px] text-muted-foreground uppercase">Or Paste Text</span>
+              <div className="flex-grow border-t border-white/10"></div>
+            </div>
+
             <Textarea
-              placeholder="Paste raw resume text here (Name, Email, Phone, College, CGPA, Experience, Skills)..."
+              placeholder="Paste raw resume text..."
               value={resumeText}
               onChange={(e) => setResumeText(e.target.value)}
-              className="min-h-[220px] bg-white/5 border-white/10 text-xs font-mono focus:border-primary"
+              className="min-h-[100px] bg-white/5 border-white/10 text-xs font-mono focus:border-primary"
             />
             <Button
-              onClick={handleParseResume}
+              onClick={handleParseText}
               disabled={parsingResume}
-              variant="glow"
-              className="w-full text-xs bg-purple-600 hover:bg-purple-700 text-white"
+              variant="outline"
+              size="sm"
+              className="w-full text-xs border-white/10 bg-white/5 hover:bg-white/10"
             >
               {parsingResume ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Extracting Fields...
+                  Extracting...
                 </>
               ) : (
                 <>
-                  <Upload className="mr-2 h-4 w-4" />
-                  Auto-Fill Profile from Resume
+                  <Sparkles className="mr-2 h-3.5 w-3.5 text-purple-400" />
+                  Parse Text Only
                 </>
               )}
             </Button>
