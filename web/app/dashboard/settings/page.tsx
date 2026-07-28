@@ -357,26 +357,22 @@ export default function SettingsPage() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="flex flex-wrap h-auto gap-1 bg-muted/50 p-1 rounded-xl">
-            <TabsTrigger value="connect" className="data-[state=active]:bg-primary/20">
-              Connect Telegram
+          <TabsList className="grid grid-cols-2 md:grid-cols-4 gap-1.5 h-auto bg-white/5 p-1.5 rounded-xl border border-white/10">
+            <TabsTrigger value="general" className="data-[state=active]:bg-primary/20 text-xs font-semibold py-2">
+              ⚙️ Preferences
             </TabsTrigger>
-            <TabsTrigger value="general">General</TabsTrigger>
-            <TabsTrigger value="reminders">Reminders</TabsTrigger>
-            <TabsTrigger value="calendar">Calendar</TabsTrigger>
-            <TabsTrigger value="ai">AI</TabsTrigger>
-            <TabsTrigger value="automation">Automation</TabsTrigger>
-            <TabsTrigger value="placement">Placement</TabsTrigger>
-            <TabsTrigger value="telegram">Telegram AI</TabsTrigger>
-            <TabsTrigger value="formProfile">Form Automator</TabsTrigger>
-            <TabsTrigger value="apiCredentials">API Keys & Twilio</TabsTrigger>
+            <TabsTrigger value="calls" className="data-[state=active]:bg-primary/20 text-xs font-semibold py-2">
+              📞 Voice &amp; Call Alerts
+            </TabsTrigger>
+            <TabsTrigger value="connect" className="data-[state=active]:bg-primary/20 text-xs font-semibold py-2">
+              ✈️ Telegram Account
+            </TabsTrigger>
+            <TabsTrigger value="ai" className="data-[state=active]:bg-primary/20 text-xs font-semibold py-2">
+              🤖 AI &amp; API Keys
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="connect" className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Link the Telegram account that is in your placement groups. Use phone + OTP below, then enable groups in{" "}
-              <strong>Notifications</strong>.
-            </p>
             <TelegramConnectCard />
           </TabsContent>
 
@@ -559,6 +555,56 @@ export default function SettingsPage() {
                 >
                   Enable browser + push notifications
                 </Button>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="calls" className="space-y-4">
+            <Card className="glass">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <PhoneCall className="h-5 w-5 text-primary" />
+                  Twilio Voice Call Alert Settings
+                </CardTitle>
+                <CardDescription>
+                  Configure your destination phone number and interactive voice call options.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <fieldset className="space-y-2 border-0 p-0">
+                  <Label>Destination Phone Number *</Label>
+                  <Input
+                    value={prefs.twilioToPhone || "+919322909257"}
+                    onChange={(e) => setPrefs((p) => (p ? { ...p, twilioToPhone: e.target.value } : null))}
+                    placeholder="+919876543210"
+                    className="font-mono text-sm"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Automated voice calls for urgent placement deadlines will ring this number.
+                  </p>
+                </fieldset>
+
+                <div className="flex items-center justify-between pt-2">
+                  <div>
+                    <Label className="font-semibold">Interactive Call Menu</Label>
+                    <p className="text-xs text-muted-foreground">Allow pressing 1 to auto-fill Google Form via voice call.</p>
+                  </div>
+                  <Switch
+                    checked={prefs.twilioVoiceSettings?.menuEnabled ?? true}
+                    onCheckedChange={(v) => nest("twilioVoiceSettings", { menuEnabled: v })}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <div>
+                    <Label className="font-semibold">Press 1 Form Auto-Fill</Label>
+                    <p className="text-xs text-muted-foreground">Generates pre-filled form link when 1 is pressed during call.</p>
+                  </div>
+                  <Switch
+                    checked={prefs.twilioVoiceSettings?.fillViaCallEnabled ?? true}
+                    onCheckedChange={(v) => nest("twilioVoiceSettings", { fillViaCallEnabled: v })}
+                  />
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
