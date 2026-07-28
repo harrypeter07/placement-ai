@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 export async function POST(req: Request) {
   try {
     const user = await requireAuth();
-    const { resumeContent, fileBase64, mimeType } = await req.json();
+    const { resumeContent, fileBase64, mimeType, geminiApiKey } = await req.json();
 
     if (!resumeContent && !fileBase64) {
       return NextResponse.json({ error: "Please upload a resume file (PDF/DOCX) or paste resume text." }, { status: 400 });
@@ -37,9 +37,9 @@ Return ONLY a raw JSON object with the following fields:
           mimeType: effectiveMime,
         },
       };
-      result = await generateGeminiContent(user.id, [prompt, filePart], PRIMARY_GEMINI_MODEL);
+      result = await generateGeminiContent(user.id, [prompt, filePart], PRIMARY_GEMINI_MODEL, geminiApiKey);
     } else {
-      result = await generateGeminiContent(user.id, [prompt, `\n\nResume Text:\n${resumeContent}`], PRIMARY_GEMINI_MODEL);
+      result = await generateGeminiContent(user.id, [prompt, `\n\nResume Text:\n${resumeContent}`], PRIMARY_GEMINI_MODEL, geminiApiKey);
     }
 
     const responseText = result.response.text();

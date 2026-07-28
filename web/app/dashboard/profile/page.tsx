@@ -102,6 +102,7 @@ export default function StudentProfilePage() {
           body: JSON.stringify({
             fileBase64: base64String,
             mimeType: file.type || "application/pdf",
+            geminiApiKey,
           }),
         });
 
@@ -150,7 +151,7 @@ export default function StudentProfilePage() {
       const res = await fetch("/api/resume/parse", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ resumeContent: resumeText }),
+        body: JSON.stringify({ resumeContent: resumeText, geminiApiKey }),
       });
 
       const data = await res.json();
