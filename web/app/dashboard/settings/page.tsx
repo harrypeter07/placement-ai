@@ -658,7 +658,7 @@ export default function SettingsPage() {
                   <Input
                     type="password"
                     value={prefs.geminiApiKey || ""}
-                    onChange={(e) => setPrefs((p) => ({ ...p, geminiApiKey: e.target.value }))}
+                    onChange={(e) => setPrefs((p) => (p ? { ...p, geminiApiKey: e.target.value } : null))}
                     placeholder="AIzaSy..."
                     className="font-mono text-xs bg-black/40"
                   />
