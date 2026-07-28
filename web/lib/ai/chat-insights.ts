@@ -97,12 +97,6 @@ export async function analyzeChatMessagesForInsights(
     return { insights: [], processingNotes: "No messages in monitored groups." };
   }
 
-  const geminiKey = await getGeminiApiKey();
-  const genAI = geminiKey ? new GoogleGenerativeAI(geminiKey) : null;
-  if (!geminiKey || !genAI) {
-    return runSmartRulesAnalysis(groups, flatCount);
-  }
-
   const transcript = groups
     .map((g) => {
       const lines = g.messages
