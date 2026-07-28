@@ -1,6 +1,5 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { ExtractedPlacement } from "@/types";
-import { getGeminiApiKey } from "@/lib/ai/gemini-env";
+import { generateGeminiContent, PRIMARY_GEMINI_MODEL } from "@/lib/ai/gemini-client";
 
 const EXTRACTION_PROMPT = `You are an expert placement opportunity parser for Indian college placement Telegram/WhatsApp notice channels.
 
@@ -41,34 +40,9 @@ export async function extractPlacementFromText(text: string): Promise<ExtractedP
     confidence: 0,
   };
 
-  const apiKey = await getGeminiApiKey();
-  if (!apiKey) {
-    return preprocessWithRegex(text);
-  }
-
   try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const models = [
-      "gemini-1.5-flash",
-      "gemini-1.5-flash-latest",
-      "gemini-1.5-flash-8b",
-      "gemini-2.0-flash",
-      "gemini-2.5-flash",
-      "gemini-1.5-pro"
-    ];
-    let responseText = "";
-    let lastErr: unknown;
-    for (const modelName of models) {
-      try {
-        const model = genAI.getGenerativeModel({ model: modelName });
-        const result = await model.generateContent(EXTRACTION_PROMPT + text);
-        responseText = result.response.text();
-        break;
-      } catch (err) {
-        lastErr = err;
-      }
-    }
-    if (!responseText) throw lastErr;
+    const result = await generateGeminiContent(undefined, EXTRACTION_PROMPT + text, PRIMARY_GEMINI_MODEL);
+    const responseText = result.response.text();
     const cleaned = responseText.replace(/```json\n?|\n?```/g, "").trim();
     const parsed = JSON.parse(cleaned) as ExtractedPlacement;
     return { ...fallback, ...parsed };
@@ -164,12 +138,7 @@ export async function analyzeResume(text: string): Promise<{
     }
   };
 
-  const apiKey = await getGeminiApiKey();
-  if (!apiKey) return defaultResult;
-
   try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     const prompt = `Analyze this resume text and return JSON only:
 {
   "atsScore": number 0-100,
@@ -193,7 +162,7 @@ export async function analyzeResume(text: string): Promise<{
 Resume:
 ${text.slice(0, 8000)}`;
 
-    const result = await model.generateContent(prompt);
+    const result = await generateGeminiContent(undefined, prompt, PRIMARY_GEMINI_MODEL);
     const cleaned = result.response.text().replace(/```json\n?|\n?```/g, "").trim();
     return JSON.parse(cleaned);
   } catch {

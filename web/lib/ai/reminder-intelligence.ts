@@ -1,5 +1,5 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import { getGeminiApiKey, isGeminiConfigured } from "@/lib/ai/gemini-env";
+import { generateGeminiContent, PRIMARY_GEMINI_MODEL } from "@/lib/ai/gemini-client";
+import { isGeminiConfigured } from "@/lib/ai/gemini-env";
 
 export type ReminderStyle = "gentle" | "balanced" | "aggressive";
 
@@ -110,11 +110,7 @@ Message:
 ${message.slice(0, 6000)}`;
 
   try {
-    const apiKey = await getGeminiApiKey();
-    if (!apiKey) return { ...FALLBACK, aiSummary: message.slice(0, 200) };
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-    const result = await model.generateContent(prompt);
+    const result = await generateGeminiContent(undefined, prompt, PRIMARY_GEMINI_MODEL);
     const text = result.response.text().replace(/```json\n?|\n?```/g, "").trim();
     const parsed = JSON.parse(text) as Record<string, unknown>;
     const confidence = Math.min(1, Math.max(0, Number(parsed.confidence) || 0.5));

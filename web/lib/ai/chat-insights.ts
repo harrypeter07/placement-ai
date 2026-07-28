@@ -1,6 +1,5 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import type { IStudentPreferences } from "@/models/StudentPreferences";
-import { getGeminiApiKey } from "@/lib/ai/gemini-env";
+import { generateGeminiContent, PRIMARY_GEMINI_MODEL } from "@/lib/ai/gemini-client";
 import { smartPlacementInsights } from "@/lib/ai/smart-placement-analysis";
 
 
@@ -163,28 +162,12 @@ Rules:
 Transcripts:
 ${transcript.slice(0, 28000)}`;
 
-  const models = [
-    "gemini-1.5-flash",
-    "gemini-1.5-flash-latest",
-    "gemini-1.5-flash-8b",
-    "gemini-2.0-flash",
-    "gemini-2.5-flash",
-    "gemini-1.5-pro"
-  ];
   let text = "";
-  let lastErr: unknown;
-  for (const modelName of models) {
-    try {
-      const model = genAI!.getGenerativeModel({ model: modelName });
-      const result = await model.generateContent(prompt);
-      text = result.response.text().replace(/```json\n?|\n?```/g, "").trim();
-      break;
-    } catch (e) {
-      lastErr = e;
-    }
-  }
-  if (!text) {
-    console.warn("[chat-insights] Gemini API failed, falling back to smart rules:", lastErr);
+  try {
+    const result = await generateGeminiContent(userId, prompt, PRIMARY_GEMINI_MODEL);
+    text = result.response.text().replace(/```json\n?|\n?```/g, "").trim();
+  } catch (err) {
+    console.warn("[chat-insights] Gemini analysis fallback:", err);
     return runSmartRulesAnalysis(groups, flatCount);
   }
 

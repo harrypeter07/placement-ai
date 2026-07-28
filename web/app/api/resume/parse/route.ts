@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAuth } from "@/lib/api-auth";
-import { GoogleGenerativeAI } from "@google/generative-ai";
-import { getEffectiveGeminiApiKey } from "@/lib/ai/gemini-key";
+import { generateGeminiContent, PRIMARY_GEMINI_MODEL } from "@/lib/ai/gemini-client";
 
 export const runtime = "nodejs";
 
@@ -13,14 +12,6 @@ export async function POST(req: Request) {
     if (!resumeContent && !fileBase64) {
       return NextResponse.json({ error: "Please upload a resume file (PDF/DOCX) or paste resume text." }, { status: 400 });
     }
-
-    const apiKey = await getEffectiveGeminiApiKey(user.id);
-    if (!apiKey) {
-      return NextResponse.json({ error: "GEMINI_API_KEY not configured" }, { status: 500 });
-    }
-
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
     const prompt = `You are an expert resume parsing AI. Analyze the attached student resume document/text and extract structured student profile information for job application auto-filling.
 Return ONLY a raw JSON object with the following fields:
@@ -39,7 +30,6 @@ Return ONLY a raw JSON object with the following fields:
 
     let result;
     if (fileBase64) {
-      // Support PDF, TXT, images directly with Gemini inlineData
       const effectiveMime = mimeType && mimeType.includes("pdf") ? "application/pdf" : mimeType || "application/pdf";
       const filePart = {
         inlineData: {
@@ -47,9 +37,9 @@ Return ONLY a raw JSON object with the following fields:
           mimeType: effectiveMime,
         },
       };
-      result = await model.generateContent([prompt, filePart]);
+      result = await generateGeminiContent(user.id, [prompt, filePart], PRIMARY_GEMINI_MODEL);
     } else {
-      result = await model.generateContent([prompt, `\n\nResume Text:\n${resumeContent}`]);
+      result = await generateGeminiContent(user.id, [prompt, `\n\nResume Text:\n${resumeContent}`], PRIMARY_GEMINI_MODEL);
     }
 
     const responseText = result.response.text();
