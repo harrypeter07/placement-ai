@@ -77,7 +77,8 @@ export default function FormAutomatorPage() {
         setReviewingJob(null);
         fetchJobs();
       } else {
-        toast.error(data.error || "Submission failed", { id: toastId });
+        const errStr = typeof data.error === "string" ? data.error : typeof data.message === "string" ? data.message : JSON.stringify(data);
+        toast.error(errStr || "Submission failed", { id: toastId });
       }
     } catch {
       toast.error("Network error while submitting", { id: toastId });
@@ -172,7 +173,7 @@ export default function FormAutomatorPage() {
           }
         }
         console.error("[Forms Page] Error from API:", errMsg, "Full body:", resBody);
-        toast.error(errMsg);
+        toast.error(typeof errMsg === "string" ? errMsg : JSON.stringify(errMsg));
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "An error occurred while submitting.";
