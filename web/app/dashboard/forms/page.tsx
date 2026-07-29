@@ -31,7 +31,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Loader2, ExternalLink, Settings, ClipboardList, Eye, AlertCircle } from "lucide-react";
+import { Loader2, ExternalLink, Settings, ClipboardList, Eye, AlertCircle, Sparkles, Copy } from "lucide-react";
 import Link from "next/link";
 
 const formSchema = z.object({
@@ -160,8 +160,9 @@ export default function FormAutomatorPage() {
         const errMsg = typeof errData.error === "string" ? errData.error : errData.message || JSON.stringify(errData);
         toast.error(errMsg || "Failed to trigger form auto-fill.");
       }
-    } catch (err: any) {
-      toast.error(err?.message || "An error occurred while submitting.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "An error occurred while submitting.";
+      toast.error(msg);
     } finally {
       setSubmitLoading(false);
     }
