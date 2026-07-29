@@ -118,21 +118,43 @@ export async function POST(req: Request) {
       additionalInfo: profile.additionalInfo || "",
     };
 
-    // ── Step 3: Insert job row ────────────────────────────────────────────────
-    const { data: job, error: insertError } = await supabase
+    // ── Step 3: Insert job row with automatic fallback for missing columns ───
+    let job: any = null;
+    let insertError: any = null;
+
+    const basePayload = {
+      user_id: user.id,
+      form_url: formUrl,
+      status: "pending",
+      profile_data: profileData,
+      auto_submit: autoSubmit ?? false,
+    };
+
+    // Try insert with trigger_source first
+    const res1 = await supabase
       .from("form_jobs")
-      .insert([{
-        user_id: user.id,
-        form_url: formUrl,
-        status: "pending",
-        profile_data: profileData,
-        auto_submit: autoSubmit ?? false,
-        trigger_source: "dashboard",
-        // Note: filled_data column must exist in Supabase — add via: 
-        // ALTER TABLE form_jobs ADD COLUMN IF NOT EXISTS filled_data JSONB DEFAULT '{}';
-      }])
+      .insert([{ ...basePayload, trigger_source: "dashboard" }])
       .select("*")
       .single();
+
+    if (res1.error) {
+      const errMsg = getErrorMessage(res1.error);
+      if (errMsg.includes("trigger_source") || errMsg.includes("PGRST204")) {
+        console.warn("[API POST /api/forms] trigger_source column missing, retrying base insert...");
+        const res2 = await supabase
+          .from("form_jobs")
+          .insert([basePayload])
+          .select("*")
+          .single();
+        job = res2.data;
+        insertError = res2.error;
+      } else {
+        job = res1.data;
+        insertError = res1.error;
+      }
+    } else {
+      job = res1.data;
+    }
 
     if (insertError || !job) {
       const msg = getErrorMessage(insertError) || "Failed to create form job";

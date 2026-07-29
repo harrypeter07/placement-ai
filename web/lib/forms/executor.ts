@@ -6,14 +6,14 @@ import { sendTelegramAlertToUser } from "@/lib/notifications/twilio";
 /** Safely update a form job — if filled_data column missing, retry without it */
 async function safeUpdateFormJob(jobId: string, updateData: Record<string, any>) {
   try {
-    return await safeUpdateFormJob(jobId, updateData);
+    return await updateFormJob(jobId, updateData);
   } catch (err: any) {
     const msg: string = err?.message || String(err);
     // PGRST204 = column not found in schema cache
-    if (msg.includes("filled_data") && msg.includes("PGRST204")) {
-      console.warn("[executor] filled_data column missing in DB — retrying without it");
-      const { filled_data: _dropped, ...rest } = updateData;
-      return await safeUpdateFormJob(jobId, rest);
+    if ((msg.includes("filled_data") || msg.includes("trigger_source")) && msg.includes("PGRST204")) {
+      console.warn("[executor] Optional column missing in DB — retrying without it");
+      const { filled_data: _d1, trigger_source: _d2, ...rest } = updateData;
+      return await updateFormJob(jobId, rest);
     }
     throw err;
   }
