@@ -117,6 +117,8 @@ CREATE TABLE IF NOT EXISTS form_jobs (
     fill_method TEXT,
     screenshot TEXT,
     error TEXT,
+    filled_data JSONB DEFAULT '{}',
+    trigger_source TEXT DEFAULT 'dashboard',
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
