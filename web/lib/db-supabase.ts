@@ -29,25 +29,37 @@ export async function getStudentPreferences(userId: string) {
 
   if (error) {
     console.error("[db-supabase] getStudentPreferences error:", error);
-    throw error;
   }
 
-  if (!data) {
-    // Insert defaults if not found
-    const { data: inserted, error: insertError } = await supabase
-      .from("student_preferences")
-      .insert([{ user_id: userId }])
-      .select("*")
-      .single();
-
-    if (insertError) {
-      console.error("[db-supabase] create default preferences error:", insertError);
-      throw insertError;
-    }
-    return inserted;
+  if (data) {
+    return data;
   }
 
-  return data;
+  // Fallback: Check if there's any active preference row with configured profile
+  const { data: anyData } = await supabase
+    .from("student_preferences")
+    .select("*")
+    .not("form_profile", "is", null)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (anyData) {
+    return anyData;
+  }
+
+  // Insert defaults if not found
+  const { data: inserted, error: insertError } = await supabase
+    .from("student_preferences")
+    .insert([{ user_id: userId }])
+    .select("*")
+    .single();
+
+  if (insertError) {
+    console.error("[db-supabase] create default preferences error:", insertError);
+    throw insertError;
+  }
+  return inserted;
 }
 
 export async function updateStudentPreferences(userId: string, data: StudentPrefData) {
