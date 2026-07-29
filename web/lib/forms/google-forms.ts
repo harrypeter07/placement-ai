@@ -28,22 +28,6 @@ export async function parseGoogleFormFields(formUrl: string): Promise<GoogleForm
 
   const html = await res.text();
 
-export async function parseGoogleFormFields(formUrl: string): Promise<GoogleFormParsed> {
-  const url = formUrl.replace(/\/viewform$/, "/viewform").replace(/\/formResponse$/, "/viewform");
-  
-  const res = await fetch(url, {
-    headers: {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    },
-    signal: AbortSignal.timeout(15000)
-  });
-
-  if (!res.ok) {
-    throw new Error(`Failed to fetch Google Form: HTTP ${res.status}`);
-  }
-
-  const html = await res.text();
-
   // Check login flag
   const requiresLogin = (
     html.includes("accounts.google.com/ServiceLogin") ||
