@@ -28,27 +28,15 @@ export async function getStudentPreferences(userId: string) {
     .maybeSingle();
 
   if (error) {
-    console.error("[db-supabase] getStudentPreferences error:", error);
+    console.error("[db-supabase] getStudentPreferences error:", error.message, error.code);
   }
 
   if (data) {
     return data;
   }
 
-  // Fallback: Check if there's any active preference row with configured profile
-  const { data: anyData } = await supabase
-    .from("student_preferences")
-    .select("*")
-    .not("form_profile", "is", null)
-    .order("updated_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (anyData) {
-    return anyData;
-  }
-
-  // Insert defaults if not found
+  // Insert defaults if not found (do NOT fallback to other users' rows)
+  console.log("[db-supabase] No preferences row for user:", userId, "— inserting defaults");
   const { data: inserted, error: insertError } = await supabase
     .from("student_preferences")
     .insert([{ user_id: userId }])
@@ -56,14 +44,14 @@ export async function getStudentPreferences(userId: string) {
     .single();
 
   if (insertError) {
-    console.error("[db-supabase] create default preferences error:", insertError);
-    throw insertError;
+    console.error("[db-supabase] create default preferences error:", insertError.message, insertError.code, insertError.details);
+    // Return null rather than throwing — callers should handle null gracefully
+    return null;
   }
   return inserted;
 }
 
 export async function updateStudentPreferences(userId: string, data: StudentPrefData) {
-  // Translate nested camelCase to snake_case db columns if needed
   const updatePayload: Record<string, any> = { ...data };
   
   const { data: updated, error } = await supabase
@@ -74,8 +62,8 @@ export async function updateStudentPreferences(userId: string, data: StudentPref
     .single();
 
   if (error) {
-    console.error("[db-supabase] updateStudentPreferences error:", error);
-    throw error;
+    console.error("[db-supabase] updateStudentPreferences error:", error.message, error.code);
+    throw new Error(`updateStudentPreferences failed: ${error.message} [${error.code}]`);
   }
 
   return updated;
@@ -123,8 +111,8 @@ export async function createDeadline(data: Record<string, any>) {
     .single();
 
   if (error) {
-    console.error("[db-supabase] createDeadline error:", error);
-    throw error;
+    console.error("[db-supabase] createDeadline error:", error.message, error.code);
+    throw new Error(`createDeadline failed: ${error.message} [${error.code}]`);
   }
   return inserted;
 }
@@ -182,8 +170,8 @@ export async function createReminder(data: Record<string, any>) {
     .single();
 
   if (error) {
-    console.error("[db-supabase] createReminder error:", error);
-    throw error;
+    console.error("[db-supabase] createReminder error:", error.message, error.code);
+    throw new Error(`createReminder failed: ${error.message} [${error.code}]`);
   }
   if (inserted?.id && inserted?.scheduled_at) {
     void scheduleQStashCallAlert(inserted.id, inserted.scheduled_at);
@@ -203,8 +191,8 @@ export async function getDueReminders() {
     .or(`snooze_until.is.null,snooze_until.lte.${nowStr}`);
 
   if (error) {
-    console.error("[db-supabase] getDueReminders error:", error);
-    throw error;
+    console.error("[db-supabase] getDueReminders error:", error.message, error.code);
+    throw new Error(`getDueReminders failed: ${error.message} [${error.code}]`);
   }
   return data;
 }
@@ -221,8 +209,8 @@ export async function markReminderSent(reminderId: string, now: Date) {
     .eq("id", reminderId);
 
   if (error) {
-    console.error("[db-supabase] markReminderSent error:", error);
-    throw error;
+    console.error("[db-supabase] markReminderSent error:", error.message, error.code);
+    throw new Error(`markReminderSent failed: ${error.message} [${error.code}]`);
   }
 }
 
@@ -239,8 +227,8 @@ export async function snoozeReminder(reminderId: string, snoozeMinutes: number) 
     .eq("id", reminderId);
 
   if (error) {
-    console.error("[db-supabase] snoozeReminder error:", error);
-    throw error;
+    console.error("[db-supabase] snoozeReminder error:", error.message, error.code);
+    throw new Error(`snoozeReminder failed: ${error.message} [${error.code}]`);
   }
 
   void scheduleQStashCallAlert(reminderId, snoozeUntil);
@@ -290,8 +278,8 @@ export async function createCalendarEventMap(userId: string, deadlineId: string,
     .single();
 
   if (error) {
-    console.error("[db-supabase] createCalendarEventMap error:", error);
-    throw error;
+    console.error("[db-supabase] createCalendarEventMap error:", error.message, error.code);
+    throw new Error(`createCalendarEventMap failed: ${error.message} [${error.code}]`);
   }
   return data;
 }
@@ -386,8 +374,8 @@ export async function createFormJob(data: Record<string, any>) {
     .single();
 
   if (error) {
-    console.error("[db-supabase] createFormJob error:", error);
-    throw error;
+    console.error("[db-supabase] createFormJob error:", error.message, error.code, error.details);
+    throw new Error(`createFormJob failed: ${error.message} [${error.code}]${error.details ? " | " + error.details : ""}`);
   }
   return inserted;
 }
@@ -401,8 +389,8 @@ export async function updateFormJob(jobId: string, updateData: Record<string, an
     .single();
 
   if (error) {
-    console.error("[db-supabase] updateFormJob error:", error);
-    throw error;
+    console.error("[db-supabase] updateFormJob error:", error.message, error.code);
+    throw new Error(`updateFormJob failed: ${error.message} [${error.code}]`);
   }
   return updated;
 }
