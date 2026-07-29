@@ -36,10 +36,12 @@ function mapDbJobToFrontend(j: any) {
 export async function GET() {
   try {
     const user = await requireAuth();
+    console.log("[API GET /api/forms] Fetching jobs for user:", user.id);
     const jobs = await getFormJobs(user.id);
     return NextResponse.json(jobs.map(mapDbJobToFrontend));
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "Error";
+    console.error("[API GET /api/forms Error]:", e);
+    const msg = e instanceof Error ? e.message : String(e);
     return NextResponse.json({ error: msg }, { status: msg === "Unauthorized" ? 401 : 500 });
   }
 }
@@ -48,16 +50,19 @@ export async function POST(req: Request) {
   try {
     const user = await requireAuth();
     const body = await req.json();
+    console.log("[API POST /api/forms] Received request:", body);
     const parsed = createSchema.safeParse(body);
     if (!parsed.success) {
+      console.warn("[API POST /api/forms] Input validation failed:", parsed.error.flatten());
       return NextResponse.json({ error: "Invalid inputs", details: parsed.error.flatten() }, { status: 400 });
     }
 
     const prefs = await getStudentPreferences(user.id);
-    const profile = prefs?.form_profile;
+    const profile = prefs?.form_profile || prefs?.formProfile;
     if (!profile || !profile.fullName) {
+      console.warn("[API POST /api/forms] Profile incomplete for user:", user.id);
       return NextResponse.json(
-        { error: "Please complete your Form Automator Profile in Settings first." },
+        { error: "Please complete your Form Automator Profile in Student Profile (/dashboard/profile) first." },
         { status: 400 }
       );
     }
@@ -91,6 +96,8 @@ export async function POST(req: Request) {
       triggerSource: "dashboard",
     });
 
+    console.log("[API POST /api/forms] Job created successfully ID:", job.id);
+
     // Execute job using shared fill logic (will complete immediately or queue Playwright)
     await runFormJobFilling(job);
 
@@ -102,12 +109,14 @@ export async function POST(req: Request) {
       .single();
 
     if (refreshError || !refreshed) {
+      console.warn("[API POST /api/forms] Refresh error, returning created job:", refreshError);
       return NextResponse.json(mapDbJobToFrontend(job), { status: 201 });
     }
 
     return NextResponse.json(mapDbJobToFrontend(refreshed), { status: 201 });
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "Error";
+    console.error("[API POST /api/forms Exception]:", e);
+    const msg = e instanceof Error ? e.message : String(e);
     return NextResponse.json({ error: msg }, { status: msg === "Unauthorized" ? 401 : 500 });
   }
 }
