@@ -147,21 +147,36 @@ export default function FormAutomatorPage() {
         body: JSON.stringify(data),
       });
 
+      const resBody = await res.json().catch(() => null);
+      console.log("[Forms Page] API response status:", res.status, "body:", resBody);
+
       if (res.ok) {
         toast.success("Form automation job started! Opening preview...");
         reset();
-        const newJob = await res.json().catch(() => null);
-        if (newJob) {
-          setReviewingJob(newJob);
+        if (resBody) {
+          setReviewingJob(resBody);
         }
         fetchJobs();
       } else {
-        const errData = await res.json().catch(() => ({}));
-        const errMsg = typeof errData.error === "string" ? errData.error : errData.message || JSON.stringify(errData);
-        toast.error(errMsg || "Failed to trigger form auto-fill.");
+        // Extract error string robustly
+        let errMsg = "Failed to trigger form auto-fill.";
+        if (resBody) {
+          if (typeof resBody.error === "string") {
+            errMsg = resBody.error;
+          } else if (typeof resBody.message === "string") {
+            errMsg = resBody.message;
+          } else if (resBody.error && typeof resBody.error === "object") {
+            errMsg = JSON.stringify(resBody.error);
+          } else {
+            errMsg = JSON.stringify(resBody);
+          }
+        }
+        console.error("[Forms Page] Error from API:", errMsg, "Full body:", resBody);
+        toast.error(errMsg);
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "An error occurred while submitting.";
+      console.error("[Forms Page] Network/parse error:", err);
       toast.error(msg);
     } finally {
       setSubmitLoading(false);

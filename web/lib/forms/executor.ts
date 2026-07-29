@@ -69,9 +69,13 @@ export async function runFormJobFilling(job: any) {
 
         if (isCall) {
           const reviewUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/dashboard/forms?jobId=${job.id}`;
-          await sendTelegramAlertToUser(
-            `📞 PlaceMint AI Form Alert: Form for ${formUrl} has been prefilled successfully via phone call call-to-action! Please open the dashboard to review and click Submit Now to complete application: ${reviewUrl}`
-          );
+          try {
+            await sendTelegramAlertToUser(
+              `📞 PlaceMint AI Form Alert: Form for ${formUrl} has been prefilled successfully via phone call call-to-action! Please open the dashboard to review and click Submit Now to complete application: ${reviewUrl}`
+            );
+          } catch (tgErr) {
+            console.warn("[executor] Telegram alert failed (non-fatal):", tgErr);
+          }
         }
         return;
       }
@@ -108,9 +112,13 @@ export async function runFormJobFilling(job: any) {
 
     if (isCall) {
       const reviewUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/dashboard/forms?jobId=${job.id}`;
-      await sendTelegramAlertToUser(
-        `📞 PlaceMint AI Form Alert: Form for ${formUrl} is ready for review in your app dashboard: ${reviewUrl}`
-      );
+      try {
+        await sendTelegramAlertToUser(
+          `📞 PlaceMint AI Form Alert: Form for ${formUrl} is ready for review in your app dashboard: ${reviewUrl}`
+        );
+      } catch (tgErr) {
+        console.warn("[executor] Telegram alert failed (non-fatal):", tgErr);
+      }
     }
     return;
   }

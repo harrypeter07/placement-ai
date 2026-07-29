@@ -58,11 +58,15 @@ export async function POST(req: Request) {
     }
 
     const prefs = await getStudentPreferences(user.id);
-    const profile = prefs?.form_profile || prefs?.formProfile;
+    console.log("[API POST /api/forms] Prefs fetched for user:", user.id, "| form_profile present:", !!prefs?.form_profile, "| form_profile.fullName:", prefs?.form_profile?.fullName);
+
+    // Support both form_profile (DB column) and formProfile (camelCase alias)
+    const profile = prefs?.form_profile || (prefs as any)?.formProfile;
     if (!profile || !profile.fullName) {
-      console.warn("[API POST /api/forms] Profile incomplete for user:", user.id);
+      const reason = !prefs ? "No preferences row found" : !profile ? "form_profile is null/empty" : "fullName is missing";
+      console.warn("[API POST /api/forms] Profile incomplete for user:", user.id, "| Reason:", reason, "| prefs keys:", prefs ? Object.keys(prefs) : "N/A");
       return NextResponse.json(
-        { error: "Please complete your Form Automator Profile in Student Profile (/dashboard/profile) first." },
+        { error: `Profile incomplete (${reason}). Please go to Student Profile (/dashboard/profile) and save your details first.` },
         { status: 400 }
       );
     }
@@ -98,8 +102,14 @@ export async function POST(req: Request) {
 
     console.log("[API POST /api/forms] Job created successfully ID:", job.id);
 
-    // Execute job using shared fill logic (will complete immediately or queue Playwright)
-    await runFormJobFilling(job);
+    // Execute job using shared fill logic - wrapped so any executor error doesn't kill the response
+    try {
+      await runFormJobFilling(job);
+      console.log("[API POST /api/forms] runFormJobFilling completed for job:", job.id);
+    } catch (execErr) {
+      console.error("[API POST /api/forms] runFormJobFilling error (non-fatal, job still created):", execErr);
+      // Don't rethrow - the job was created, executor errors should not block the response
+    }
 
     // Fetch refreshed job state from Supabase to return final response
     const { data: refreshed, error: refreshError } = await supabase
@@ -116,6 +126,7 @@ export async function POST(req: Request) {
     return NextResponse.json(mapDbJobToFrontend(refreshed), { status: 201 });
   } catch (e) {
     console.error("[API POST /api/forms Exception]:", e);
+    console.error("[API POST /api/forms Stack]:", e instanceof Error ? e.stack : "No stack");
     const msg = e instanceof Error ? e.message : String(e);
     return NextResponse.json({ error: msg }, { status: msg === "Unauthorized" ? 401 : 500 });
   }
