@@ -403,7 +403,7 @@ export default function FormAutomatorPage() {
             <DialogTitle className="text-purple-300 flex items-center justify-between">
               <span className="flex items-center gap-2">
                 <ClipboardList className="h-5 w-5 text-emerald-400" />
-                Interactive Form Auto-Filler &amp; Previewer
+                Interactive Form Auto-Filler &amp; Launcher
               </span>
               {reviewingJob && (
                 <a
@@ -417,11 +417,35 @@ export default function FormAutomatorPage() {
               )}
             </DialogTitle>
             <p className="text-xs text-muted-foreground mt-1">
-              View your form rendered live below with 1-click profile helper chips to auto-fill fields instantly!
+              PlaceMint has generated an auto-prefilled link for your form. Click below to open and submit under your Google account!
             </p>
           </DialogHeader>
           {reviewingJob && (
             <div className="space-y-4 mt-2">
+              {/* Main Launch Card */}
+              <div className="p-4 rounded-xl border border-emerald-500/40 bg-gradient-to-r from-emerald-950/40 to-slate-900 flex flex-col md:flex-row items-center justify-between gap-4 shadow-xl">
+                <div className="space-y-1 text-center md:text-left">
+                  <div className="flex items-center justify-center md:justify-start gap-2">
+                    <Sparkles className="h-4 w-4 text-emerald-400 animate-pulse" />
+                    <h3 className="font-bold text-sm text-emerald-300">Ready to Submit with Google Account</h3>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    All your profile fields have been mapped into the prefill URL. Click to launch with your logged-in Google account!
+                  </p>
+                </div>
+                <a
+                  href={reviewingJob.screenshot || reviewingJob.formUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="shrink-0"
+                >
+                  <Button variant="glow" size="lg" className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold gap-2 px-6 shadow-lg shadow-emerald-900/50">
+                    <ExternalLink className="h-4 w-4" />
+                    🚀 Launch Auto-Prefilled Form
+                  </Button>
+                </a>
+              </div>
+
               {reviewingJob.error && (
                 <div className="p-3 rounded-lg bg-amber-500/10 text-amber-300 border border-amber-500/30 text-xs flex items-center gap-2">
                   <AlertCircle className="h-4 w-4 shrink-0 text-amber-400" />
@@ -459,11 +483,25 @@ export default function FormAutomatorPage() {
                 </div>
               )}
 
-              {/* Prefill Live iFrame Preview */}
-              <div className="rounded-xl border border-purple-500/30 overflow-hidden bg-slate-900 h-[550px] shadow-2xl relative">
+              {/* Form Preview / Fallback Box */}
+              <div className="rounded-xl border border-white/10 overflow-hidden bg-slate-900 h-[480px] shadow-2xl relative">
+                <div className="absolute top-0 inset-x-0 bg-slate-950/90 border-b border-white/10 p-2.5 z-10 flex items-center justify-between text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1.5 text-amber-300">
+                    <AlertCircle className="h-3.5 w-3.5 text-amber-400 shrink-0" />
+                    Google security blocks embedding inside frames (X-Frame-Options). Use the green button above to open prefilled form in a tab!
+                  </span>
+                  <a
+                    href={reviewingJob.screenshot || reviewingJob.formUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-emerald-400 hover:underline flex items-center gap-1 font-semibold shrink-0 ml-2"
+                  >
+                    Open Form <ExternalLink className="h-3 w-3" />
+                  </a>
+                </div>
                 <iframe
                   src={reviewingJob.screenshot || reviewingJob.formUrl}
-                  className="w-full h-full border-0"
+                  className="w-full h-full border-0 pt-10"
                   title="Google Form Interactive Preview"
                 />
               </div>

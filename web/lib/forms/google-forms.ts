@@ -28,19 +28,36 @@ export async function parseGoogleFormFields(formUrl: string): Promise<GoogleForm
 
   const html = await res.text();
 
-  // 1. Check if login is required
-  if (
+export async function parseGoogleFormFields(formUrl: string): Promise<GoogleFormParsed> {
+  const url = formUrl.replace(/\/viewform$/, "/viewform").replace(/\/formResponse$/, "/viewform");
+  
+  const res = await fetch(url, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    },
+    signal: AbortSignal.timeout(15000)
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to fetch Google Form: HTTP ${res.status}`);
+  }
+
+  const html = await res.text();
+
+  // Check login flag
+  const requiresLogin = (
     html.includes("accounts.google.com/ServiceLogin") ||
     html.includes("Sign in to Google") ||
     html.includes("Sign in to your Google Account") ||
     html.includes("You must sign in to access this content")
-  ) {
-    return { title: "Requires Google Sign-in", fields: [], requiresLogin: true, isMultiPage: false };
-  }
+  );
 
-  // 2. Locate FB_PUBLIC_LOAD_DATA_ javascript variable
+  // Attempt to locate FB_PUBLIC_LOAD_DATA_ javascript variable (even on login screens!)
   const match = html.match(/var\s+FB_PUBLIC_LOAD_DATA_\s*=\s*([\s\S]*?);/);
   if (!match) {
+    if (requiresLogin) {
+      return { title: "Requires Google Sign-in", fields: [], requiresLogin: true, isMultiPage: false };
+    }
     throw new Error("Could not find FB_PUBLIC_LOAD_DATA_ in Google Form page source");
   }
 
@@ -92,11 +109,14 @@ export async function parseGoogleFormFields(formUrl: string): Promise<GoogleForm
     return {
       title: formTitle,
       fields,
-      requiresLogin: false,
+      requiresLogin,
       isMultiPage
     };
   } catch (err) {
     console.error("[parseGoogleFormFields] JSON parse failure:", err);
+    if (requiresLogin) {
+      return { title: "Requires Google Sign-in", fields: [], requiresLogin: true, isMultiPage: false };
+    }
     throw new Error("Failed to parse Google Form JS data structure");
   }
 }
@@ -105,7 +125,7 @@ export async function parseGoogleFormFields(formUrl: string): Promise<GoogleForm
 export function fuzzyMatchFormField(label: string, profile: Record<string, any>): string | undefined {
   const cleanLabel = label.toLowerCase();
   
-  if (/\b(name|full name|candidate name|applicant name)\b/.test(cleanLabel)) {
+  if (/\b(name|full name|candidate name|applicant name|student name)\b/.test(cleanLabel)) {
     return profile.fullName;
   }
   if (/\b(email|mail|email id|mail id)\b/.test(cleanLabel)) {
@@ -114,14 +134,20 @@ export function fuzzyMatchFormField(label: string, profile: Record<string, any>)
   if (/\b(phone|mobile|contact|number|whatsapp|tele)\b/.test(cleanLabel)) {
     return profile.phone;
   }
+  if (/\b(college|university|institute|school|campus)\b/.test(cleanLabel)) {
+    return profile.collegeName;
+  }
   if (/\b(cgpa|gpa|pointer|percentage|percent|marks|btech pointer)\b/.test(cleanLabel)) {
     return profile.cgpa;
   }
-  if (/\b(branch|department|stream|specialization|course|degree)\b/.test(cleanLabel)) {
+  if (/\b(branch|department|stream|specialization|course|degree|major)\b/.test(cleanLabel)) {
     return profile.branch;
   }
   if (/\b(grad|graduation|year of pass|passing year|batch|year)\b/.test(cleanLabel)) {
     return profile.graduationYear;
+  }
+  if (/\b(age|dob|date of birth|birth date)\b/.test(cleanLabel)) {
+    return profile.age || profile.additionalInfo;
   }
   if (/\b(resume|cv|drive link|resume link|upload resume)\b/.test(cleanLabel)) {
     return profile.resumeLink;
@@ -131,6 +157,21 @@ export function fuzzyMatchFormField(label: string, profile: Record<string, any>)
   }
   if (/linkedin/.test(cleanLabel)) {
     return profile.linkedInLink;
+  }
+  if (/\b(portfolio|website|site|personal website)\b/.test(cleanLabel)) {
+    return profile.portfolioUrl;
+  }
+  if (/\b(work|experience|internship|internships|job)\b/.test(cleanLabel)) {
+    return profile.workExperience;
+  }
+  if (/\b(project|projects)\b/.test(cleanLabel)) {
+    return profile.projects;
+  }
+  if (/\b(skill|skills|tech stack|technologies)\b/.test(cleanLabel)) {
+    return profile.skills;
+  }
+  if (/\b(certification|certifications|certificate)\b/.test(cleanLabel)) {
+    return profile.certifications;
   }
   if (/\b(roll|reg|registration|usn|enrollment|id)\b/.test(cleanLabel)) {
     return profile.rollNumber;
