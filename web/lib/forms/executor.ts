@@ -78,17 +78,38 @@ export async function runFormJobFilling(job: any) {
     }
   }
 
-  // FALLBACK: Playwright service trigger
+  // FALLBACK: Playwright service trigger or Interactive In-App View
   const fallbackServiceUrl = (process.env.PLAYWRIGHT_SERVICE_URL || "").replace(/\/$/, "");
   if (!fallbackServiceUrl) {
-    // No Playwright fallback configured, fail the job
+    // Generate default profile filledData map so user can 1-click copy fields in app
+    const profile = job.profile_data || job.profileData || {};
+    const filledData: Record<string, { label: string; value: string }> = {};
+    if (profile.fullName) filledData["Full Name"] = { label: "Full Name", value: profile.fullName };
+    if (profile.email) filledData["Email Address"] = { label: "Email Address", value: profile.email };
+    if (profile.phone) filledData["Phone Number"] = { label: "Phone Number", value: profile.phone };
+    if (profile.collegeName) filledData["College / University"] = { label: "College / University", value: profile.collegeName };
+    if (profile.cgpa) filledData["CGPA / Percentage"] = { label: "CGPA / Percentage", value: profile.cgpa };
+    if (profile.branch) filledData["Branch / Major"] = { label: "Branch / Major", value: profile.branch };
+    if (profile.graduationYear) filledData["Graduation Year"] = { label: "Graduation Year", value: profile.graduationYear };
+    if (profile.resumeLink) filledData["Resume Link"] = { label: "Resume Link", value: profile.resumeLink };
+
+    const status = isCall ? "filled_pending_review" : "completed";
+    const reqLoginNote = parseResult?.requiresLogin
+      ? "Note: This Google Form requires Google Sign-in. You can sign in and auto-fill your profile directly in the embedded view below!"
+      : null;
+
     await updateFormJob(job.id, {
-      status: "failed",
-      error: "Google Form requires manual interaction or Playwright fallback service is not configured.",
+      status,
+      fill_method: "prefill_url",
+      screenshot: formUrl,
+      filled_data: filledData,
+      error: reqLoginNote,
     });
+
     if (isCall) {
+      const reviewUrl = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/dashboard/forms?jobId=${job.id}`;
       await sendTelegramAlertToUser(
-        `❌ PlaceMint AI Form Alert: Playwright fallback service is not configured for call-triggered job. FormUrl: ${formUrl}`
+        `📞 PlaceMint AI Form Alert: Form for ${formUrl} is ready for review in your app dashboard: ${reviewUrl}`
       );
     }
     return;

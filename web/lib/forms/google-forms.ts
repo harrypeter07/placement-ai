@@ -29,8 +29,13 @@ export async function parseGoogleFormFields(formUrl: string): Promise<GoogleForm
   const html = await res.text();
 
   // 1. Check if login is required
-  if (html.includes("accounts.google.com/ServiceLogin") || html.includes("Sign in to Google")) {
-    return { title: "Requires Login", fields: [], requiresLogin: true, isMultiPage: false };
+  if (
+    html.includes("accounts.google.com/ServiceLogin") ||
+    html.includes("Sign in to Google") ||
+    html.includes("Sign in to your Google Account") ||
+    html.includes("You must sign in to access this content")
+  ) {
+    return { title: "Requires Google Sign-in", fields: [], requiresLogin: true, isMultiPage: false };
   }
 
   // 2. Locate FB_PUBLIC_LOAD_DATA_ javascript variable

@@ -148,15 +148,20 @@ export default function FormAutomatorPage() {
       });
 
       if (res.ok) {
-        toast.success("Form automation job started!");
+        toast.success("Form automation job started! Opening preview...");
         reset();
+        const newJob = await res.json().catch(() => null);
+        if (newJob) {
+          setReviewingJob(newJob);
+        }
         fetchJobs();
       } else {
-        const errData = await res.json();
-        toast.error(errData.error || "Failed to trigger form auto-fill.");
+        const errData = await res.json().catch(() => ({}));
+        const errMsg = typeof errData.error === "string" ? errData.error : errData.message || JSON.stringify(errData);
+        toast.error(errMsg || "Failed to trigger form auto-fill.");
       }
-    } catch {
-      toast.error("An error occurred while submitting.");
+    } catch (err: any) {
+      toast.error(err?.message || "An error occurred while submitting.");
     } finally {
       setSubmitLoading(false);
     }
@@ -336,45 +341,15 @@ export default function FormAutomatorPage() {
                             </Badge>
                           </TableCell>
                           <TableCell className="text-right">
-                            {job.status === "filled_pending_review" ? (
-                              <Button
-                                variant="glow"
-                                size="sm"
-                                className="h-8 px-3 text-amber-400 hover:text-amber-300 gap-1.5"
-                                onClick={() => setReviewingJob(job)}
-                              >
-                                <ClipboardList className="h-4 w-4" />
-                                Review &amp; Submit
-                              </Button>
-                            ) : job.status === "completed" && job.screenshot ? (
-                              job.fillMethod === "prefill_url" ? (
-                                <a
-                                  href={job.screenshot}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex items-center gap-1.5 text-xs text-green-400 hover:underline font-semibold"
-                                >
-                                  Open Prefilled URL
-                                  <ExternalLink className="h-3.5 w-3.5" />
-                                </a>
-                              ) : (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-8 px-2 text-green-400 hover:text-green-300 gap-1.5 hover:bg-white/5"
-                                  onClick={() => setSelectedScreenshot(job.screenshot || null)}
-                                >
-                                  <Eye className="h-4 w-4" />
-                                  Screenshot
-                                </Button>
-                              )
-                            ) : job.status === "failed" && job.error ? (
-                              <span className="text-xs text-red-400 cursor-help" title={job.error}>
-                                Error info
-                              </span>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">Waiting...</span>
-                            )}
+                            <Button
+                              variant="glow"
+                              size="sm"
+                              className="h-8 px-3 text-emerald-400 hover:text-emerald-300 gap-1.5 bg-emerald-950/50 border-emerald-500/30"
+                              onClick={() => setReviewingJob(job)}
+                            >
+                              <Eye className="h-4 w-4" />
+                              View &amp; Fill Form
+                            </Button>
                           </TableCell>
                         </TableRow>
                       ))}
@@ -406,103 +381,101 @@ export default function FormAutomatorPage() {
       </Dialog>
 
       <Dialog open={!!reviewingJob} onOpenChange={(open) => !open && setReviewingJob(null)}>
-        <DialogContent className="sm:max-w-[50vw] border-white/10 bg-slate-950/95 backdrop-blur max-h-[85vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-[75vw] border-white/10 bg-slate-950/95 backdrop-blur max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle className="text-purple-300 flex items-center gap-2">
-              <ClipboardList className="h-5 w-5" />
-              Verify &amp; Submit Application Form
+            <DialogTitle className="text-purple-300 flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <ClipboardList className="h-5 w-5 text-emerald-400" />
+                Interactive Form Auto-Filler &amp; Previewer
+              </span>
+              {reviewingJob && (
+                <a
+                  href={reviewingJob.screenshot || reviewingJob.formUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs text-purple-300 hover:underline flex items-center gap-1 font-mono"
+                >
+                  Open in New Tab <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              )}
             </DialogTitle>
             <p className="text-xs text-muted-foreground mt-1">
-              Review the fields automatically mapped by PlaceMint A.I. before submitting to the form endpoint.
+              View your form rendered live below with 1-click profile helper chips to auto-fill fields instantly!
             </p>
           </DialogHeader>
           {reviewingJob && (
-            <div className="space-y-4 mt-4">
-              <div className="text-xs text-muted-foreground space-y-1">
-                <p><strong>Form URL:</strong> <a href={reviewingJob.formUrl} target="_blank" rel="noreferrer" className="text-purple-300 underline font-mono break-all inline-flex items-center gap-1">{reviewingJob.formUrl}<ExternalLink className="h-3 w-3" /></a></p>
-                <p><strong>Trigger Source:</strong> <span className="capitalize">{reviewingJob.triggerSource || "call"}</span></p>
-                <p><strong>Fill Method:</strong> <span className="capitalize">{reviewingJob.fillMethod?.replace("_", " ") || "prefill_url"}</span></p>
-              </div>
-
-              {/* Display Extracted Values */}
-              {reviewingJob.filledData && Object.keys(reviewingJob.filledData).length > 0 ? (
-                <div className="space-y-2 border rounded-lg p-4 bg-white/5 border-white/10">
-                  <h4 className="text-sm font-semibold text-purple-300">Extracted Values for Google Form:</h4>
-                  <div className="grid gap-2 text-xs pt-2">
-                    {Object.entries(reviewingJob.filledData).map(([label, val]) => (
-                      <div key={label} className="grid grid-cols-2 gap-2 border-b border-white/5 pb-2 last:border-b-0 last:pb-0">
-                        <span className="text-muted-foreground font-medium">{label}</span>
-                        <span className="text-white font-semibold text-right break-all">{val.value || "—"}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <div className="p-4 rounded-lg bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 text-xs flex gap-2">
-                  <AlertCircle className="h-4 w-4 shrink-0" />
-                  No field mapping logs found. Please review the live form preview.
+            <div className="space-y-4 mt-2">
+              {reviewingJob.error && (
+                <div className="p-3 rounded-lg bg-amber-500/10 text-amber-300 border border-amber-500/30 text-xs flex items-center gap-2">
+                  <AlertCircle className="h-4 w-4 shrink-0 text-amber-400" />
+                  <span>{reviewingJob.error}</span>
                 </div>
               )}
 
-              {/* Screenshot Preview for Playwright */}
-              {reviewingJob.fillMethod === "playwright" && reviewingJob.screenshot && (
-                <div className="space-y-2">
-                  <h4 className="text-sm font-semibold text-purple-300">Verification Screenshot:</h4>
-                  <div className="rounded-lg border border-white/10 overflow-hidden max-h-[40vh] overflow-y-auto">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={reviewingJob.screenshot}
-                      alt="Playwright verification screenshot"
-                      className="w-full h-auto object-contain"
-                    />
+              {/* 1-Click Copy Profile Quick Bar */}
+              {reviewingJob.filledData && Object.keys(reviewingJob.filledData).length > 0 && (
+                <div className="p-3.5 rounded-xl border border-purple-500/30 bg-purple-950/30 space-y-2">
+                  <p className="text-[11px] font-bold text-purple-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <Sparkles className="h-3.5 w-3.5 text-emerald-400 animate-pulse" />
+                    1-Click Profile Helper — Click any chip to copy value to clipboard:
+                  </p>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {Object.entries(reviewingJob.filledData).map(([label, val]) => (
+                      <Button
+                        key={label}
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          navigator.clipboard.writeText(val.value || "");
+                          toast.success(`Copied "${val.value}" to clipboard!`);
+                        }}
+                        className="text-xs h-7 bg-black/50 border-white/10 hover:bg-emerald-500/20 hover:border-emerald-500/40 text-white gap-1.5"
+                        title={`Click to copy ${label}: ${val.value}`}
+                      >
+                        <Copy className="h-3 w-3 text-purple-400" />
+                        <span className="text-muted-foreground font-normal">{label}:</span>
+                        <span className="font-semibold text-emerald-400 max-w-[150px] truncate">{val.value || "—"}</span>
+                      </Button>
+                    ))}
                   </div>
                 </div>
               )}
 
               {/* Prefill Live iFrame Preview */}
-              {reviewingJob.fillMethod === "prefill_url" && reviewingJob.screenshot && (
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-sm font-semibold text-purple-300">Live Auto-Filled Form Preview:</h4>
-                    <a
-                      href={reviewingJob.screenshot}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex items-center gap-1 text-xs text-purple-300 hover:underline font-medium"
-                    >
-                      Open in Full Tab <ExternalLink className="h-3 w-3" />
-                    </a>
-                  </div>
-                  <div className="rounded-xl border border-purple-500/30 overflow-hidden bg-slate-900 h-[480px] shadow-2xl relative">
-                    <iframe
-                      src={reviewingJob.screenshot}
-                      className="w-full h-full border-0"
-                      title="Google Form Auto-Filled Preview"
-                    />
-                  </div>
-                </div>
-              )}
+              <div className="rounded-xl border border-purple-500/30 overflow-hidden bg-slate-900 h-[550px] shadow-2xl relative">
+                <iframe
+                  src={reviewingJob.screenshot || reviewingJob.formUrl}
+                  className="w-full h-full border-0"
+                  title="Google Form Interactive Preview"
+                />
+              </div>
 
               {/* Action Buttons */}
-              <div className="pt-4 border-t border-white/10 flex justify-end gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setReviewingJob(null)}
-                  disabled={submittingConfirm}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  variant="glow"
-                  size="sm"
-                  onClick={() => confirmSubmit(reviewingJob._id)}
-                  disabled={submittingConfirm}
-                  className="bg-amber-600 hover:bg-amber-700 border-amber-500 text-white"
-                >
-                  {submittingConfirm && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Submit Now
-                </Button>
+              <div className="pt-3 border-t border-white/10 flex justify-between items-center">
+                <span className="text-xs text-muted-foreground font-mono truncate max-w-[350px]">
+                  Job ID: {reviewingJob._id}
+                </span>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setReviewingJob(null)}
+                    disabled={submittingConfirm}
+                  >
+                    Close Preview
+                  </Button>
+                  <Button
+                    variant="glow"
+                    size="sm"
+                    onClick={() => confirmSubmit(reviewingJob._id)}
+                    disabled={submittingConfirm}
+                    className="bg-emerald-600 hover:bg-emerald-700 border-emerald-500 text-white font-semibold"
+                  >
+                    {submittingConfirm && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                    Confirm Application Completed
+                  </Button>
+                </div>
               </div>
             </div>
           )}
