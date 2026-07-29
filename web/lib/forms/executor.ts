@@ -3,6 +3,22 @@ import { updateFormJob } from "@/lib/db-supabase";
 import { parseGoogleFormFields, fuzzyMatchFormField, submitPrefilledFormResponse } from "./google-forms";
 import { sendTelegramAlertToUser } from "@/lib/notifications/twilio";
 
+/** Safely update a form job — if filled_data column missing, retry without it */
+async function safeUpdateFormJob(jobId: string, updateData: Record<string, any>) {
+  try {
+    return await safeUpdateFormJob(jobId, updateData);
+  } catch (err: any) {
+    const msg: string = err?.message || String(err);
+    // PGRST204 = column not found in schema cache
+    if (msg.includes("filled_data") && msg.includes("PGRST204")) {
+      console.warn("[executor] filled_data column missing in DB — retrying without it");
+      const { filled_data: _dropped, ...rest } = updateData;
+      return await safeUpdateFormJob(jobId, rest);
+    }
+    throw err;
+  }
+}
+
 export async function runFormJobFilling(job: any) {
   const formUrl = job.form_url || job.formUrl;
   const isCall = (job.trigger_source === "call" || job.triggerSource === "call");
@@ -46,7 +62,7 @@ export async function runFormJobFilling(job: any) {
         // Submit directly via POST
         const success = await submitPrefilledFormResponse(formUrl, prefillParams);
         if (success) {
-          await updateFormJob(job.id, {
+          await safeUpdateFormJob(job.id, {
             status: "completed",
             fill_method: "prefill_url",
             screenshot: prefilledUrl,
@@ -60,7 +76,7 @@ export async function runFormJobFilling(job: any) {
         // Dry-run/Call-triggered review gate: complete immediately and return prefilled URL link
         // For calls, set status to filled_pending_review!
         const status = isCall ? "filled_pending_review" : "completed";
-        await updateFormJob(job.id, {
+        await safeUpdateFormJob(job.id, {
           status,
           fill_method: "prefill_url",
           screenshot: prefilledUrl,
@@ -102,7 +118,7 @@ export async function runFormJobFilling(job: any) {
       ? "Note: This Google Form requires Google Sign-in. You can sign in and auto-fill your profile directly in the embedded view below!"
       : null;
 
-    await updateFormJob(job.id, {
+    await safeUpdateFormJob(job.id, {
       status,
       fill_method: "prefill_url",
       screenshot: formUrl,
@@ -124,7 +140,7 @@ export async function runFormJobFilling(job: any) {
   }
 
   // Mark job as running and call Playwright service
-  await updateFormJob(job.id, {
+  await safeUpdateFormJob(job.id, {
     status: "running",
     fill_method: "playwright",
   });
@@ -139,3 +155,4 @@ export async function runFormJobFilling(job: any) {
     console.error("[POST forms] Failed to trigger Playwright service:", err);
   });
 }
+

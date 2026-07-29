@@ -128,7 +128,8 @@ export async function POST(req: Request) {
         profile_data: profileData,
         auto_submit: autoSubmit ?? false,
         trigger_source: "dashboard",
-        filled_data: {},
+        // Note: filled_data column must exist in Supabase — add via: 
+        // ALTER TABLE form_jobs ADD COLUMN IF NOT EXISTS filled_data JSONB DEFAULT '{}';
       }])
       .select("*")
       .single();
