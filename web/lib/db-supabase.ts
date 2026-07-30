@@ -418,19 +418,8 @@ export async function getFormJobs(userId: string) {
     .limit(50);
 
   if (error) {
-    console.error("[db-supabase] getFormJobs error:", error);
+    console.error("[db-supabase] getFormJobs error:", error.message || error);
   }
 
-  if (data && data.length > 0) {
-    return data;
-  }
-
-  // Fallback: Query all recent jobs
-  const { data: allJobs } = await supabase
-    .from("form_jobs")
-    .select("*")
-    .order("created_at", { ascending: false })
-    .limit(50);
-
-  return allJobs || [];
+  return data || [];
 }

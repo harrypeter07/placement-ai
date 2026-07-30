@@ -34,24 +34,7 @@ export async function getEffectiveGeminiApiKey(userId?: string, overrideKey?: st
     }
   }
 
-  // 2. Try fetching any saved Gemini key in student_preferences DB table
-  try {
-    const { data } = await supabase
-      .from("student_preferences")
-      .select("gemini_api_key, geminiApiKey")
-      .not("gemini_api_key", "is", null)
-      .limit(1)
-      .maybeSingle();
-
-    const anyKey = data?.gemini_api_key || data?.geminiApiKey;
-    if (anyKey && typeof anyKey === "string" && anyKey.trim().length > 10) {
-      return anyKey.trim();
-    }
-  } catch (err) {
-    console.warn("[GeminiClient] Error querying DB for any saved key:", err);
-  }
-
-  // 3. Fall back to server environment variable if configured
+  // 2. Fall back to server environment variable if configured
   const envKey = process.env.GEMINI_API_KEY;
   if (envKey && envKey.trim().length > 10) {
     return envKey.trim();
