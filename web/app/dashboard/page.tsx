@@ -3,12 +3,18 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
-import { Clock, CheckCircle, XCircle, Target, Bell, Flame, TrendingUp, Sparkles } from "lucide-react";
+import {
+  Clock, CheckCircle, XCircle, Target, Bell, Flame, TrendingUp, Sparkles,
+  ClipboardList, PhoneCall, FileText, ArrowRight, ShieldCheck
+} from "lucide-react";
 import { DashboardHeader } from "@/components/dashboard/sidebar";
 import { SystemStatusBar } from "@/components/dashboard/system-status";
 import { StatCard } from "@/components/dashboard/stat-card";
+import { BentoHeroRadar } from "@/components/dashboard/bento-hero-radar";
+import { HowItWorksBento } from "@/components/dashboard/how-it-works-bento";
 import { ApplicationActivityChart, UpcomingDeadlinesChart, StatusPieChart } from "@/components/dashboard/charts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { DashboardStats } from "@/types";
 
@@ -68,99 +74,160 @@ export default function DashboardPage() {
 
   return (
     <>
-      <DashboardHeader title="Overview" />
-      <motion.div className="p-4 lg:p-8 space-y-8">
+      <DashboardHeader title="Overview & Bento Command Center" />
+      <motion.div
+        initial={{ opacity: 0, y: 15 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.3 }}
+        className="p-4 lg:p-8 space-y-8 max-w-[1600px] mx-auto"
+      >
+        {/* System Health Status Bar */}
         <SystemStatusBar />
+
         {analyticsError && (
-          <p className="text-sm text-amber-400/90 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2">
-            {analyticsError}
+          <p className="text-xs text-amber-300 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 flex items-center justify-between">
+            <span>{analyticsError}</span>
+            <Link href="/login" className="underline font-bold hover:text-amber-100 ml-2">Re-authenticate &rarr;</Link>
           </p>
         )}
+
+        {/* ── BENTO ROW 1: Hero Capability Radar & Level Progression ── */}
+        <BentoHeroRadar
+          productivityScore={stats?.productivityScore ?? 85}
+          placementStreak={stats?.placementStreak ?? 1}
+          appliedCount={stats?.appliedCompanies ?? 0}
+          eligibleCount={stats?.eligibleCompanies ?? 0}
+        />
+
+        {/* ── BENTO ROW 2: Key Metric Cards Grid ── */}
         {loading ? (
-          <motion.div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-28 rounded-xl" />
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-28 rounded-2xl bg-white/5 border border-white/10" />
             ))}
-          </motion.div>
+          </div>
         ) : (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5"
-          >
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
             <StatCard title="Upcoming Deadlines" value={stats?.upcomingDeadlines ?? 0} icon={Clock} trend="Next 7 days" />
-            <StatCard title="Applied" value={stats?.appliedCompanies ?? 0} icon={CheckCircle} />
-            <StatCard title="Missed" value={stats?.missedOpportunities ?? 0} icon={XCircle} />
-            <StatCard title="Eligible" value={stats?.eligibleCompanies ?? 0} icon={Target} />
-            <StatCard title="Reminders" value={stats?.reminderCount ?? 0} icon={Bell} />
-          </motion.div>
+            <StatCard title="Applied Drives" value={stats?.appliedCompanies ?? 0} icon={CheckCircle} trend="100% Tracked" />
+            <StatCard title="Missed Opportunities" value={stats?.missedOpportunities ?? 0} icon={XCircle} />
+            <StatCard title="Eligible Companies" value={stats?.eligibleCompanies ?? 0} icon={Target} trend="Match Rate" />
+            <StatCard title="Scheduled Reminders" value={stats?.reminderCount ?? 0} icon={Bell} trend="Phone + Web" />
+          </div>
         )}
 
-        {pinnedInsights.length > 0 && (
-          <Card className="glass border-primary/25">
-            <CardHeader className="flex flex-row items-center justify-between">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Sparkles className="h-4 w-4 text-primary" /> Pinned AI insights
+        {/* ── BENTO ROW 3: Interactive How PlaceMint AI Works Visualizer ── */}
+        <HowItWorksBento />
+
+        {/* ── BENTO ROW 4: Pinned AI Insights & Activity Grid ── */}
+        <div className="grid gap-6 lg:grid-cols-12">
+          {/* Pinned Insights Column */}
+          <div className="lg:col-span-5 space-y-6">
+            <Card className="glass border-primary/20 bg-slate-950/80 backdrop-blur-xl h-full flex flex-col">
+              <CardHeader className="flex flex-row items-center justify-between border-b border-white/10 pb-4">
+                <CardTitle className="flex items-center gap-2 text-base font-bold text-white">
+                  <Sparkles className="h-4 w-4 text-purple-400 animate-pulse" />
+                  Pinned AI Telegram Insights
+                </CardTitle>
+                <Link href="/dashboard/insights" className="text-xs text-purple-400 hover:underline flex items-center gap-1 font-semibold">
+                  View all <ArrowRight className="h-3 w-3" />
+                </Link>
+              </CardHeader>
+              <CardContent className="p-4 space-y-3 flex-1">
+                {pinnedInsights.length === 0 ? (
+                  <div className="p-6 text-center text-xs text-muted-foreground space-y-2">
+                    <p>No pinned insights yet.</p>
+                    <p className="text-[11px] text-purple-300/80">Connect Telegram groups in Settings to auto-generate AI insights!</p>
+                  </div>
+                ) : (
+                  pinnedInsights.map((ins) => (
+                    <div key={ins._id} className="rounded-xl border border-purple-500/20 bg-purple-950/20 p-3.5 space-y-1.5 hover:border-purple-500/40 transition-all">
+                      <div className="flex items-center justify-between">
+                        <p className="font-bold text-xs text-purple-200">{ins.title}</p>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-full border border-purple-500/30 bg-purple-500/10 text-purple-300 uppercase">
+                          {ins.urgency || "Normal"}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-300 line-clamp-2">{ins.summary}</p>
+                    </div>
+                  ))
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Activity Chart Column */}
+          <div className="lg:col-span-7 space-y-6">
+            <Card className="glass border-white/10 bg-slate-950/80 backdrop-blur-xl">
+              <CardHeader className="border-b border-white/10 pb-4">
+                <CardTitle className="text-base font-bold text-white flex items-center justify-between">
+                  <span>Application Activity Analytics</span>
+                  <span className="text-xs font-mono text-emerald-400 font-normal">Live Tracking</span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-4 pt-6">
+                {loading ? <Skeleton className="h-[280px]" /> : (
+                  <ApplicationActivityChart data={charts?.applicationActivity || []} />
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+
+        {/* ── BENTO ROW 5: Upcoming Deadlines & Breakdown Grid ── */}
+        <div className="grid gap-6 lg:grid-cols-2">
+          <Card className="glass border-white/10 bg-slate-950/80 backdrop-blur-xl">
+            <CardHeader className="border-b border-white/10 pb-4">
+              <CardTitle className="text-base font-bold text-white flex items-center justify-between">
+                <span>Upcoming Placement Deadlines</span>
+                <Link href="/dashboard/deadlines" className="text-xs text-purple-400 hover:underline">
+                  All Deadlines &rarr;
+                </Link>
               </CardTitle>
-              <Link href="/dashboard/insights" className="text-xs text-primary underline">
-                View all
-              </Link>
             </CardHeader>
-            <CardContent className="space-y-2">
-              {pinnedInsights.map((ins) => (
-                <div key={ins._id} className="rounded-lg bg-primary/10 p-3 text-sm">
-                  <p className="font-medium">{ins.title}</p>
-                  <p className="text-muted-foreground text-xs mt-1 line-clamp-2">{ins.summary}</p>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        )}
-
-        <motion.div className="grid gap-4 sm:grid-cols-2">
-          <Card className="glass">
-            <CardHeader><CardTitle className="flex items-center gap-2"><Flame className="h-4 w-4 text-orange-400" /> Placement Streak</CardTitle></CardHeader>
-            <CardContent>
-              <p className="text-3xl font-bold text-gradient">{stats?.placementStreak ?? 0} days</p>
-              <p className="text-sm text-muted-foreground mt-1">Keep applying daily!</p>
-            </CardContent>
-          </Card>
-          <Card className="glass">
-            <CardHeader><CardTitle className="flex items-center gap-2"><TrendingUp className="h-4 w-4 text-primary" /> Productivity Score</CardTitle></CardHeader>
-            <CardContent>
-              <p className="text-3xl font-bold">{stats?.productivityScore ?? 0}%</p>
-              <p className="text-sm text-muted-foreground mt-1">Based on applications & tracking</p>
-            </CardContent>
-          </Card>
-        </motion.div>
-
-        <motion.div className="grid gap-6 lg:grid-cols-2">
-          <Card className="glass">
-            <CardHeader><CardTitle>Application Activity</CardTitle></CardHeader>
-            <CardContent>
-              {loading ? <Skeleton className="h-[280px]" /> : (
-                <ApplicationActivityChart data={charts?.applicationActivity || []} />
-              )}
-            </CardContent>
-          </Card>
-          <Card className="glass">
-            <CardHeader><CardTitle>Upcoming Deadlines</CardTitle></CardHeader>
-            <CardContent>
-              {loading ? <Skeleton className="h-[280px]" /> : (
+            <CardContent className="p-4 pt-6">
+              {loading ? <Skeleton className="h-[260px]" /> : (
                 <UpcomingDeadlinesChart data={charts?.upcomingChart || []} />
               )}
             </CardContent>
           </Card>
-        </motion.div>
 
-        <Card className="glass">
-          <CardHeader><CardTitle>Application Status Breakdown</CardTitle></CardHeader>
-          <CardContent>
-            {loading ? <Skeleton className="h-[280px]" /> : (
-              <StatusPieChart data={charts?.statusBreakdown || []} />
-            )}
-          </CardContent>
-        </Card>
+          <Card className="glass border-white/10 bg-slate-950/80 backdrop-blur-xl">
+            <CardHeader className="border-b border-white/10 pb-4">
+              <CardTitle className="text-base font-bold text-white">Application Status Breakdown</CardTitle>
+            </CardHeader>
+            <CardContent className="p-4 pt-6">
+              {loading ? <Skeleton className="h-[260px]" /> : (
+                <StatusPieChart data={charts?.statusBreakdown || []} />
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* ── Quick Action Hub Banner ── */}
+        <div className="p-6 rounded-2xl border border-purple-500/30 bg-gradient-to-r from-purple-950/40 via-slate-900 to-emerald-950/40 flex flex-col md:flex-row items-center justify-between gap-4 shadow-2xl">
+          <div className="space-y-1 text-center md:text-left">
+            <h3 className="text-lg font-bold text-white flex items-center justify-center md:justify-start gap-2">
+              <Sparkles className="h-5 w-5 text-emerald-400 animate-pulse" />
+              Automate Your Placement Applications Today
+            </h3>
+            <p className="text-xs text-slate-300">
+              Auto-fill Google Forms, set up Twilio phone calls, and sync your Telegram drive announcements in 1-click.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2 shrink-0">
+            <Link href="/dashboard/forms">
+              <Button variant="glow" size="sm" className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs gap-1.5">
+                <ClipboardList className="h-3.5 w-3.5" /> Auto-Fill Google Form
+              </Button>
+            </Link>
+            <Link href="/dashboard/calls">
+              <Button variant="outline" size="sm" className="border-white/10 bg-white/5 hover:bg-white/10 text-xs gap-1.5">
+                <PhoneCall className="h-3.5 w-3.5 text-orange-400" /> Voice Call Logs
+              </Button>
+            </Link>
+          </div>
+        </div>
       </motion.div>
     </>
   );

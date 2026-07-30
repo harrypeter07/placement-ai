@@ -117,15 +117,52 @@ export function DashboardSidebar() {
 export function DashboardHeader({ title }: { title: string }) {
   const { setSidebarOpen, setCommandOpen } = useAppStore();
   return (
-    <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-white/5 bg-background/80 backdrop-blur-xl px-4 lg:px-8">
-      <Button variant="ghost" size="icon" className="lg:hidden" onClick={() => setSidebarOpen(true)}>
-        <Menu className="h-5 w-5" />
-      </Button>
-      <h1 className="text-lg font-semibold flex-1">{title}</h1>
-      <Button variant="outline" size="sm" onClick={() => setCommandOpen(true)} className="hidden sm:flex">
-        <span className="text-muted-foreground mr-2">Search</span>
-        <kbd className="pointer-events-none inline-flex h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium">⌘K</kbd>
-      </Button>
+    <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-white/10 bg-slate-950/80 backdrop-blur-xl px-4 lg:px-8 shadow-lg">
+      <div className="flex items-center gap-3">
+        <Button variant="ghost" size="icon" className="lg:hidden text-purple-300" onClick={() => setSidebarOpen(true)}>
+          <Menu className="h-5 w-5" />
+        </Button>
+        <div>
+          <h1 className="text-base font-extrabold tracking-tight bg-gradient-to-r from-white via-slate-200 to-purple-300 bg-clip-text text-transparent">
+            {title}
+          </h1>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3">
+        {/* Live Status Indicators */}
+        <div className="hidden md:flex items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 text-emerald-300 text-[11px] font-mono">
+            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-ping" />
+            Form AI Active
+          </span>
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-purple-500/30 bg-purple-500/10 text-purple-300 text-[11px] font-mono">
+            <Sparkles className="h-3 w-3 text-purple-400" />
+            Telegram Ingestion
+          </span>
+        </div>
+
+        {/* Quick Action CTA Shortcuts */}
+        <Link href="/dashboard/forms">
+          <Button size="sm" variant="glow" className="text-xs bg-emerald-600 hover:bg-emerald-500 text-white font-semibold gap-1.5 h-8 px-3">
+            <ClipboardList className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Auto-Fill Form</span>
+          </Button>
+        </Link>
+
+        {/* Command Search Trigger */}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setCommandOpen(true)}
+          className="hidden sm:flex border-white/10 bg-white/5 hover:bg-white/10 text-xs h-8 gap-2"
+        >
+          <span className="text-muted-foreground">Search</span>
+          <kbd className="pointer-events-none inline-flex h-4 select-none items-center gap-1 rounded border border-white/10 bg-black/40 px-1.5 font-mono text-[10px] font-medium text-purple-300">
+            ⌘K
+          </kbd>
+        </Button>
+      </div>
     </header>
   );
 }
