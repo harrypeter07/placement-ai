@@ -4,8 +4,8 @@ import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import {
-  Clock, CheckCircle, XCircle, Target, Bell, Flame, TrendingUp, Sparkles,
-  ClipboardList, PhoneCall, FileText, ArrowRight, ShieldCheck
+  Clock, CheckCircle, XCircle, Target, Bell, Sparkles,
+  ClipboardList, PhoneCall, ArrowRight
 } from "lucide-react";
 import { DashboardHeader } from "@/components/dashboard/sidebar";
 import { SystemStatusBar } from "@/components/dashboard/system-status";
