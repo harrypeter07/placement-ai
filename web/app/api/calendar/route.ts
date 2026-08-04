@@ -44,9 +44,6 @@ export async function GET(req: Request) {
 
     const u = (dbUser || {}) as CalendarUserFields;
     let connected = !!(u.google_calendar_refresh_token || u.google_calendar_access_token);
-    if (!connected && u.google_calendar_connected) {
-      connected = true;
-    }
 
     let googleEvents: Awaited<ReturnType<typeof listPrimaryCalendarEvents>> = [];
     let googleFetchError: string | null = null;
@@ -61,17 +58,18 @@ export async function GET(req: Request) {
         connected = true;
       } catch (e) {
         googleFetchError = e instanceof Error ? e.message : "Could not load Google Calendar";
+        connected = false;
       }
     }
 
     const rangePadStart = new Date(timeMin.getTime() - 24 * 60 * 60 * 1000);
     const rangePadEnd = new Date(timeMax.getTime() + 24 * 60 * 60 * 1000);
 
-    // Fetch deadlines from Supabase
+    // Fetch deadlines strictly for current user from Supabase
     const { data: deadlines, error: dbErr } = await supabase
       .from("deadlines")
       .select("*")
-      .or(`user_id.eq.${user.id},is_global.eq.true`)
+      .eq("user_id", user.id)
       .gte("deadline_date", rangePadStart.toISOString())
       .lte("deadline_date", rangePadEnd.toISOString())
       .order("deadline_date", { ascending: true })

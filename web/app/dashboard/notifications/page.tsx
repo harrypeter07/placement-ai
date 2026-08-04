@@ -407,6 +407,25 @@ export default function NotificationsPage() {
           </div>
         </div>
 
+        {groupList.length === 0 && !loadingGroups && (
+          <div className="p-4 rounded-xl border border-purple-500/30 bg-purple-950/20 mb-4 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="space-y-1 text-center sm:text-left">
+              <h3 className="font-bold text-sm text-purple-200 flex items-center justify-center sm:justify-start gap-2">
+                <Sparkles className="h-4 w-4 text-purple-400 animate-pulse" />
+                Telegram Integration Disconnected
+              </h3>
+              <p className="text-xs text-muted-foreground">
+                Connect your Telegram account in Settings to sync placement cell channels, discover drive updates, and parse deadlines automatically.
+              </p>
+            </div>
+            <Link href="/dashboard/settings?tab=telegram" className="shrink-0">
+              <Button variant="glow" size="sm" className="bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs gap-1.5">
+                <Users className="h-3.5 w-3.5" /> Connect Telegram
+              </Button>
+            </Link>
+          </div>
+        )}
+
         <Card className="glass border-primary/20 mb-4">
             <CardContent className="p-4 flex gap-3 text-sm">
               <Info className="h-5 w-5 text-primary shrink-0 mt-0.5" />

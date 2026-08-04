@@ -418,7 +418,7 @@ export default function StudentProfilePage() {
                   </Label>
                   <Input
                     id="fullName"
-                    placeholder="e.g. Hassan Mansuri"
+                    placeholder="e.g. Jane Doe"
                     value={profile.fullName}
                     onChange={(e) => setProfile({ ...profile, fullName: e.target.value })}
                     className="bg-white/5 border-white/10 focus:border-primary text-sm"
@@ -432,7 +432,7 @@ export default function StudentProfilePage() {
                   <Input
                     id="email"
                     type="email"
-                    placeholder="e.g. hassan@college.edu"
+                    placeholder="e.g. student@university.edu"
                     value={profile.email}
                     onChange={(e) => setProfile({ ...profile, email: e.target.value })}
                     className="bg-white/5 border-white/10 focus:border-primary text-sm"
@@ -445,7 +445,7 @@ export default function StudentProfilePage() {
                   </Label>
                   <Input
                     id="phone"
-                    placeholder="e.g. +919322909257"
+                    placeholder="e.g. +91 98765 43210"
                     value={profile.phone}
                     onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
                     className="bg-white/5 border-white/10 focus:border-primary text-sm font-mono"

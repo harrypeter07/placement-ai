@@ -18,7 +18,7 @@ export async function GET(req: Request) {
     let query = supabase
       .from("deadlines")
       .select("*")
-      .or(`user_id.eq.${user.id},is_global.eq.true`);
+      .eq("user_id", user.id);
 
     if (status === "past") {
       query = query.lt("deadline_date", nowStr);

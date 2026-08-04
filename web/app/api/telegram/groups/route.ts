@@ -31,12 +31,20 @@ export async function GET() {
       .eq("user_id", user.id)
       .maybeSingle();
 
-    const monitored = new Set(prefs?.telegram_config?.monitoredGroupIds || []);
+    const isConnected = !!prefs?.telegram_config?.connected;
+    const monitoredList = prefs?.telegram_config?.monitoredGroupIds || [];
+    const monitored = new Set(monitoredList);
 
-    // Fetch groups from Supabase
+    // If user has not connected Telegram or has no monitored groups, return empty array
+    if (!isConnected || monitoredList.length === 0) {
+      return NextResponse.json([]);
+    }
+
+    // Fetch only monitored groups from Supabase
     const { data: groups } = await supabase
       .from("telegram_groups")
       .select("*")
+      .in("group_id", Array.from(monitored))
       .order("updated_at", { ascending: false });
 
     return NextResponse.json(

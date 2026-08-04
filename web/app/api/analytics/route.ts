@@ -8,7 +8,7 @@ export async function GET() {
   try {
     const user = await requireAuth();
 
-    // 1. Run count queries in parallel via Supabase
+    // 1. Run count queries in parallel via Supabase (strictly scoped by user_id)
     const [
       { count: upcoming },
       { count: applied },
@@ -19,23 +19,23 @@ export async function GET() {
       supabase
         .from("deadlines")
         .select("id", { count: "exact", head: true })
-        .or(`user_id.eq.${user.id},is_global.eq.true`)
+        .eq("user_id", user.id)
         .gte("deadline_date", new Date().toISOString())
         .eq("status", "pending"),
       supabase
         .from("deadlines")
         .select("id", { count: "exact", head: true })
-        .or(`user_id.eq.${user.id},is_global.eq.true`)
+        .eq("user_id", user.id)
         .eq("status", "applied"),
       supabase
         .from("deadlines")
         .select("id", { count: "exact", head: true })
-        .or(`user_id.eq.${user.id},is_global.eq.true`)
+        .eq("user_id", user.id)
         .eq("status", "missed"),
       supabase
         .from("deadlines")
         .select("id", { count: "exact", head: true })
-        .or(`user_id.eq.${user.id},is_global.eq.true`)
+        .eq("user_id", user.id)
         .eq("status", "pending"),
       supabase
         .from("reminders")
@@ -44,11 +44,11 @@ export async function GET() {
         .eq("sent", false),
     ]);
 
-    // 2. Query deadlines list
+    // 2. Query deadlines list strictly for current user
     const { data: deadlines } = await supabase
       .from("deadlines")
       .select("*")
-      .or(`user_id.eq.${user.id},is_global.eq.true`)
+      .eq("user_id", user.id)
       .order("deadline_date", { ascending: true })
       .limit(30);
 
@@ -71,11 +71,11 @@ export async function GET() {
         daysLeft: Math.ceil((new Date(d.deadline_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24)),
       }));
 
-    // 3. Compute status breakdown by grouping in JS
+    // 3. Compute status breakdown for current user
     const { data: statuses } = await supabase
       .from("deadlines")
       .select("status")
-      .or(`user_id.eq.${user.id},is_global.eq.true`);
+      .eq("user_id", user.id);
 
     const counts: Record<string, number> = {};
     (statuses || []).forEach((d) => {
