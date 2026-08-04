@@ -47,17 +47,17 @@ export async function processDueRemindersInternal(targetUserId?: string) {
       const isCallReminder =
         channels.includes("phoneCall") ||
         channels.includes("phone_call") ||
-        reminder.offset_preset === "call" ||
-        reminder.reminder_style === "aggressive";
+        reminder.offset_preset === "call";
 
-      // Place phone call if user hasn't disabled phone calls in settings OR if explicitly designated for calls/urgent
+      // ── SAFETY RULE: Mark sent FIRST to prevent loop re-triggering ───────
+      await markReminderSent(reminder.id, now);
+
+      // Phone call placed ONLY IF user has explicitly enabled phone calls in settings
+      // AND this specific reminder is configured as a phone call reminder.
       const userWantsPhone =
-        notificationsConfig.phoneCall !== false ||
-        isCallReminder ||
-        reminder.priority === "high" ||
-        reminder.priority === "critical" ||
-        reminder.escalation_level === "urgent" ||
-        reminder.escalation_level === "critical";
+        notificationsConfig.phoneCall === true &&
+        isCallReminder &&
+        !quiet;
 
       // 1. Log inApp / dashboard notification
       await createNotificationLog({
@@ -83,7 +83,7 @@ export async function processDueRemindersInternal(targetUserId?: string) {
         }
       }
 
-      // 3. Trigger Twilio Voice Call (if enabled and is a phone call reminder)
+      // 3. Trigger Twilio Voice Call (ONLY IF explicitly opted-in)
       let phoneCallResult = null;
       if (userWantsPhone) {
         const destinationPhone =
@@ -91,37 +91,27 @@ export async function processDueRemindersInternal(targetUserId?: string) {
           prefs?.twilioToPhone ||
           prefs?.form_profile?.phone ||
           prefs?.formProfile?.phone ||
-          process.env.TWILIO_TO_PHONE_NUMBER ||
           "";
 
         if (destinationPhone) {
-          if (quiet) {
-            console.log(`[DueProcessor] Quiet hours active for ${userId}. Sending Telegram DM fallback.`);
-            const dmText = `⚠️ PlaceMint AI Quiet Hours Alert: Reminder for ${deadline.company} - ${deadline.role} is due. (Scheduled call skipped during quiet hours). Details: ${reminder.message || ""}`;
-            await sendTelegramAlertToUser(dmText);
-          } else {
-            const formUrl = (deadline.links || []).find((l: string) =>
-              l.includes("forms.gle") || l.includes("docs.google.com/forms")
-            ) || "";
+          const formUrl = (deadline.links || []).find((l: string) =>
+            l.includes("forms.gle") || l.includes("docs.google.com/forms")
+          ) || "";
 
-            phoneCallResult = await makeReminderPhoneCall(
-              destinationPhone,
-              deadline.company,
-              deadline.role,
-              new Date(reminder.scheduled_at || deadline.deadline_date),
-              userId,
-              reminder.id,
-              formUrl
-            );
-            console.log(`[DueProcessor] Placed phone call to ${destinationPhone}:`, phoneCallResult);
-          }
+          phoneCallResult = await makeReminderPhoneCall(
+            destinationPhone,
+            deadline.company,
+            deadline.role,
+            new Date(reminder.scheduled_at || deadline.deadline_date),
+            userId,
+            reminder.id,
+            formUrl
+          );
+          console.log(`[DueProcessor] Placed phone call to ${destinationPhone}:`, phoneCallResult);
         } else {
           console.warn(`[DueProcessor] No destination phone number found for user ${userId}`);
         }
       }
-
-      // Update reminder state to sent
-      await markReminderSent(reminder.id, now);
 
       processed.push({
         id: reminder.id,
