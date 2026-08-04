@@ -85,9 +85,10 @@ export async function POST(req: Request) {
       );
       console.log(`[POST verify-code] completeTelegramLogin completed. User found: username=${login.telegramUsername}, displayName=${login.displayName}`);
 
-      // Upsert worker session in Supabase
+      // Upsert worker session in Supabase strictly for current user
       const sessionPayload = {
-        key: "default",
+        key: user.id,
+        user_id: user.id,
         session_string: login.sessionString,
         telethon_session_string: login.telethonSessionString || null,
         phone_number: login.phoneNumber,

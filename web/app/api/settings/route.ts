@@ -152,9 +152,6 @@ export async function GET() {
     if (!obj.twilioFromPhone && process.env.TWILIO_FROM_PHONE_NUMBER) {
       obj.twilioFromPhone = process.env.TWILIO_FROM_PHONE_NUMBER;
     }
-    if (!obj.twilioToPhone && process.env.TWILIO_TO_PHONE_NUMBER) {
-      obj.twilioToPhone = process.env.TWILIO_TO_PHONE_NUMBER;
-    }
 
     return NextResponse.json(obj);
   } catch (e) {

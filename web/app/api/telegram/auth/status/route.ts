@@ -11,13 +11,13 @@ function maskPhone(phone: string) {
 
 export async function GET() {
   try {
-    await requireAuth();
+    const user = await requireAuth();
     
-    // Check connected session from Supabase
+    // Check connected session from Supabase strictly for current user
     const { data: doc } = await supabase
       .from("telegram_worker_sessions")
       .select("session_string, phone_number, telegram_username, display_name, connected_at")
-      .eq("key", "default")
+      .or(`user_id.eq.${user.id},key.eq.${user.id}`)
       .maybeSingle();
 
     if (!doc?.session_string) {

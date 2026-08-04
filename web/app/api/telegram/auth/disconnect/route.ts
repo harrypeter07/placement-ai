@@ -8,8 +8,8 @@ export async function DELETE() {
   try {
     const user = await requireAuth();
     
-    // Delete session and pending auth from Supabase
-    await supabase.from("telegram_worker_sessions").delete().eq("key", "default");
+    // Delete session and pending auth from Supabase strictly for current user
+    await supabase.from("telegram_worker_sessions").delete().or(`user_id.eq.${user.id},key.eq.${user.id}`);
     await supabase.from("telegram_auth_pendings").delete().eq("user_id", user.id);
     
     return NextResponse.json({ ok: true });
