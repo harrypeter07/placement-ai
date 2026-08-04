@@ -51,12 +51,7 @@ export const authOptions: NextAuthOptions = {
           prompt: "consent",
           access_type: "offline",
           response_type: "code",
-          scope: [
-            "openid",
-            "email",
-            "profile",
-            "https://www.googleapis.com/auth/calendar",
-          ].join(" "),
+          scope: "openid email profile",
         },
       },
     }),
@@ -162,15 +157,18 @@ export const authOptions: NextAuthOptions = {
           user.id = userId;
           user.role = userRole as UserRole;
 
-          // Update Google Calendar tokens in Supabase
+          // Update Google Calendar tokens in Supabase if calendar scope was granted
           const calUpdate: Record<string, unknown> = {
-            google_calendar_connected: true,
             updated_at: new Date().toISOString(),
           };
+          const scopeStr = account.scope || "";
+          if (scopeStr.includes("calendar")) {
+            calUpdate.google_calendar_connected = true;
+          }
           if (account.refresh_token) {
             calUpdate.google_calendar_refresh_token = account.refresh_token;
           }
-          if (account.access_token) {
+          if (account.access_token && scopeStr.includes("calendar")) {
             calUpdate.google_calendar_access_token = account.access_token;
           }
           const acc = account as { expires_at?: number };
@@ -205,13 +203,16 @@ export const authOptions: NextAuthOptions = {
           if (emailRaw) {
             const emailNorm = emailRaw.toLowerCase().trim();
             const calUpdate: Record<string, unknown> = {
-              google_calendar_connected: true,
               updated_at: new Date().toISOString(),
             };
+            const scopeStr = account.scope || "";
+            if (scopeStr.includes("calendar")) {
+              calUpdate.google_calendar_connected = true;
+            }
             if (account.refresh_token) {
               calUpdate.google_calendar_refresh_token = account.refresh_token;
             }
-            if (account.access_token) {
+            if (account.access_token && scopeStr.includes("calendar")) {
               calUpdate.google_calendar_access_token = account.access_token;
             }
             const acc = account as { expires_at?: number };
