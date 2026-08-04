@@ -4,7 +4,7 @@ import {
   getStudentPreferences,
   createNotificationLog,
 } from "@/lib/db-supabase";
-import { makeReminderPhoneCall, sendTelegramAlertToUser } from "@/lib/notifications/twilio";
+import { makeReminderPhoneCall } from "@/lib/notifications/twilio";
 import { sendPushToUser } from "@/lib/firebase/send-push";
 import { isQuietHoursNow } from "@/lib/reminders/quiet-hours";
 
