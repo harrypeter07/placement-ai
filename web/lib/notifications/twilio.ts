@@ -78,6 +78,14 @@ export async function makeReminderPhoneCall(
       if (prefs?.twilio_voice_settings) {
         voiceSettings = { ...voiceSettings, ...prefs.twilio_voice_settings };
       }
+      // ── DOUBLE SAFETY GUARD: Refuse calls unless user explicitly enabled phone calls in settings ──
+      const explicitPhoneCallEnabled = prefs?.notifications_config?.phoneCall === true;
+      const voiceCallsNotDisabled = (voiceSettings as Record<string, unknown>).enabled !== false;
+      
+      if (!explicitPhoneCallEnabled || !voiceCallsNotDisabled) {
+        console.warn(`[Twilio] Call refused for user ${userId}: phoneCall is not explicitly set to true in notification settings.`);
+        return { error: "user_phone_calls_disabled" };
+      }
     } catch (prefErr) {
       console.error("[Twilio] Error fetching user call settings:", prefErr);
     }
